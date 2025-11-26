@@ -29,6 +29,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 636
           script: |
             cd ${{ secrets.SERVER_PATH }}
             git pull
