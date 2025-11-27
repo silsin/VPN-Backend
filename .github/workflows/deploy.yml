@@ -1,0 +1,38 @@
+name: Deploy to Ubuntu Server
+
+on:
+  push:
+    branches: [ "main" ]   # اگر master استفاده می‌کنید تغییر دهید
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install --production=false
+
+      - name: Build project
+        run: npm run build
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 636
+          script: |
+            cd ${{ secrets.SERVER_PATH }}
+            git pull
+            npm install --production=false
+            npm run build
+            pm2 restart all
