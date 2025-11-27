@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-import { Connection } from '../../connections/entities/connection.entity';
+
 
 export enum UserRole {
   USER = 'user',
@@ -77,8 +77,7 @@ export class User {
   @Column({ nullable: true })
   passwordResetExpires: Date;
 
-  @OneToMany(() => Connection, (connection) => connection.user)
-  connections: Connection[];
+
 
   @CreateDateColumn()
   createdAt: Date;

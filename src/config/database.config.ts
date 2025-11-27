@@ -10,7 +10,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
     return {
       type: 'postgres',
       host: this.configService.get<string>('DB_HOST', '195.181.173.71'),
-      port: this.configService.get<number>('DB_PORT', 5432),
+      port: parseInt(this.configService.get<string>('DB_PORT', '5432'), 10),
       username: this.configService.get<string>('DB_USERNAME', 'myuser2347'),
       password: this.configService.get<string>('DB_PASSWORD', 'gfx234789!!!@@@###'),
       database: this.configService.get<string>('DB_NAME', 'flyvpn'),

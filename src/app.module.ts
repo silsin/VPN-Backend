@@ -7,10 +7,8 @@ import { AppService } from './app.service';
 import { DatabaseConfig } from './config/database.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
-import { VpnServersModule } from './modules/vpn-servers/vpn-servers.module';
 import { AdsModule } from './modules/ads/ads.module';
-import { ConnectionsModule } from './modules/connections/connections.module';
-import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module';
 
 @Module({
   imports: [
@@ -29,10 +27,8 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     ]),
     AuthModule,
     UsersModule,
-    VpnServersModule,
     AdsModule,
-    ConnectionsModule,
-    AnalyticsModule,
+    V2RayConfigsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
