@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { DeviceLoginDto } from './dto/device-login.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -22,6 +23,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Login user' })
   async login(@Request() req, @Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('device-login')
+  @ApiOperation({ summary: 'Login with device ID' })
+  async deviceLogin(@Body() deviceLoginDto: DeviceLoginDto) {
+    return this.authService.deviceLogin(deviceLoginDto);
   }
 
   @UseGuards(JwtAuthGuard)

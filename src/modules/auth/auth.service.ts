@@ -61,5 +61,71 @@ export class AuthService {
       throw new UnauthorizedException('Invalid token');
     }
   }
+
+  validateDeviceId(deviceId: string): boolean {
+    // Validate device ID format
+    // Must be at least 16 characters and contain only alphanumeric characters and hyphens
+    const deviceIdRegex = /^[a-zA-Z0-9-]{16,}$/;
+    return deviceIdRegex.test(deviceId);
+  }
+
+  async deviceLogin(deviceLoginDto: {
+    deviceId: string;
+    deviceName?: string;
+    platform?: string;
+    pushId?: string;
+  }) {
+    // Validate device ID format
+    if (!this.validateDeviceId(deviceLoginDto.deviceId)) {
+      throw new UnauthorizedException(
+        'Invalid device ID format. Device ID must be at least 16 characters and contain only letters, numbers, and hyphens.',
+      );
+    }
+
+    // Check if user exists with this device ID
+    let user = await this.usersService.findByDeviceId(deviceLoginDto.deviceId);
+
+    // If user doesn't exist, create a new one (auto-registration)
+    if (!user) {
+      user = await this.usersService.createDeviceUser({
+        deviceId: deviceLoginDto.deviceId,
+        deviceName: deviceLoginDto.deviceName,
+        platform: deviceLoginDto.platform,
+        pushId: deviceLoginDto.pushId,
+      });
+    } else {
+      // Update device info if provided
+      if (deviceLoginDto.deviceName || deviceLoginDto.platform || deviceLoginDto.pushId) {
+        await this.usersService.updateDeviceInfo(user.id, {
+          deviceName: deviceLoginDto.deviceName,
+          platform: deviceLoginDto.platform,
+          pushId: deviceLoginDto.pushId,
+        });
+      }
+    }
+
+    // Update last login
+    await this.usersService.updateLastLogin(user.id);
+
+    // Generate JWT token
+    const payload = { 
+      deviceId: user.deviceId, 
+      sub: user.id, 
+      role: user.role 
+    };
+    
+    return {
+      access_token: this.jwtService.sign(payload),
+      user: {
+        id: user.id,
+        deviceId: user.deviceId,
+        deviceName: user.deviceName,
+        platform: user.platform,
+        username: user.username,
+        role: user.role,
+      },
+    };
+  }
+
 }
 

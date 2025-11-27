@@ -98,5 +98,60 @@ export class UsersService {
     user.status = status;
     return this.usersRepository.save(user);
   }
+
+  async findByDeviceId(deviceId: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: { deviceId },
+    });
+  }
+
+  async createDeviceUser(deviceData: {
+    deviceId: string;
+    deviceName?: string;
+    platform?: string;
+    pushId?: string;
+  }): Promise<User> {
+    const existingUser = await this.usersRepository.findOne({
+      where: { deviceId: deviceData.deviceId },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('User with this device ID already exists');
+    }
+
+    const user = this.usersRepository.create({
+      deviceId: deviceData.deviceId,
+      deviceName: deviceData.deviceName,
+      platform: deviceData.platform,
+      pushId: deviceData.pushId,
+      username: `mobile_${deviceData.deviceId.substring(0, 8)}`,
+    });
+
+    return this.usersRepository.save(user);
+  }
+
+  async updateDeviceInfo(
+    userId: string,
+    deviceData: {
+      deviceName?: string;
+      platform?: string;
+      pushId?: string;
+    },
+  ): Promise<User> {
+    const user = await this.findOne(userId);
+    
+    if (deviceData.deviceName) {
+      user.deviceName = deviceData.deviceName;
+    }
+    if (deviceData.platform) {
+      user.platform = deviceData.platform;
+    }
+    if (deviceData.pushId) {
+      user.pushId = deviceData.pushId;
+    }
+
+    return this.usersRepository.save(user);
+  }
+
 }
 
