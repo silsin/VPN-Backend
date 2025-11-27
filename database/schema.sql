@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS ad_impressions CASCADE;
 DROP TYPE IF EXISTS user_role CASCADE;
 DROP TYPE IF EXISTS user_status CASCADE;
 DROP TYPE IF EXISTS v2ray_config_type CASCADE;
+DROP TYPE IF EXISTS v2ray_config_category CASCADE;
 DROP TYPE IF EXISTS ad_type CASCADE;
 DROP TYPE IF EXISTS ad_platform CASCADE;
 DROP TYPE IF EXISTS ad_placement CASCADE;
@@ -29,6 +30,7 @@ DROP TYPE IF EXISTS ad_placement CASCADE;
 CREATE TYPE user_role AS ENUM ('user', 'admin');
 CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
 CREATE TYPE v2ray_config_type AS ENUM ('v2ray_link', 'json_config');
+CREATE TYPE v2ray_config_category AS ENUM ('splash', 'main', 'backup');
 CREATE TYPE ad_type AS ENUM ('banner', 'video', 'reward');
 CREATE TYPE ad_platform AS ENUM ('android', 'ios', 'both');
 CREATE TYPE ad_placement AS ENUM ('main_page', 'splash', 'video_ad', 'reward_video');
@@ -64,6 +66,7 @@ CREATE TABLE v2ray_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL UNIQUE,
     type v2ray_config_type NOT NULL DEFAULT 'v2ray_link',
+    category v2ray_config_category NOT NULL DEFAULT 'main',
     content TEXT NOT NULL,
     "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -95,6 +98,7 @@ CREATE TABLE ad_settings (
 
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_v2ray_configs_name ON v2ray_configs(name);
+CREATE INDEX idx_v2ray_configs_category ON v2ray_configs(category);
 CREATE INDEX idx_ads_placement ON ads(placement);
 CREATE INDEX idx_ads_platform ON ads(platform);
 CREATE INDEX idx_ads_is_active ON ads("isActive");

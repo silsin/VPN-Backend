@@ -13,7 +13,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger'
 import { V2RayConfigsService } from './v2ray-configs.service';
 import { CreateV2RayConfigDto } from './dto/create-v2ray-config.dto';
 import { UpdateV2RayConfigDto } from './dto/update-v2ray-config.dto';
-import { V2RayConfigType } from './entities/v2ray-config.entity';
+import { V2RayConfigType, V2RayConfigCategory } from './entities/v2ray-config.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('V2Ray Configs')
@@ -39,11 +39,13 @@ export class V2RayConfigsController {
   @ApiOperation({ summary: 'Get all V2Ray configurations' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'type', enum: V2RayConfigType, required: false })
+  @ApiQuery({ name: 'category', enum: V2RayConfigCategory, required: false })
   findAll(
     @Query('search') search?: string,
     @Query('type') type?: V2RayConfigType,
+    @Query('category') category?: V2RayConfigCategory,
   ) {
-    return this.v2rayConfigsService.findAll(search, type);
+    return this.v2rayConfigsService.findAll(search, type, category);
   }
 
   @Get(':id')

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
-import { V2RayConfig, V2RayConfigType } from './entities/v2ray-config.entity';
+import { V2RayConfig, V2RayConfigType, V2RayConfigCategory } from './entities/v2ray-config.entity';
 import { CreateV2RayConfigDto } from './dto/create-v2ray-config.dto';
 import { UpdateV2RayConfigDto } from './dto/update-v2ray-config.dto';
 
@@ -17,13 +17,16 @@ export class V2RayConfigsService {
     return this.v2rayConfigsRepository.save(config);
   }
 
-  async findAll(search?: string, type?: V2RayConfigType): Promise<V2RayConfig[]> {
+  async findAll(search?: string, type?: V2RayConfigType, category?: V2RayConfigCategory): Promise<V2RayConfig[]> {
     const where: any = {};
     if (search) {
       where.name = Like(`%${search}%`);
     }
     if (type) {
       where.type = type;
+    }
+    if (category) {
+      where.category = category;
     }
     return this.v2rayConfigsRepository.find({
       where,
@@ -60,11 +63,27 @@ export class V2RayConfigsService {
     const jsonCount = await this.v2rayConfigsRepository.count({
       where: { type: V2RayConfigType.JSON },
     });
+    const splashCount = await this.v2rayConfigsRepository.count({
+      where: { category: V2RayConfigCategory.SPLASH },
+    });
+    const mainCount = await this.v2rayConfigsRepository.count({
+      where: { category: V2RayConfigCategory.MAIN },
+    });
+    const backupCount = await this.v2rayConfigsRepository.count({
+      where: { category: V2RayConfigCategory.BACKUP },
+    });
 
     return {
       total,
-      linkCount,
-      jsonCount,
+      byType: {
+        link: linkCount,
+        json: jsonCount,
+      },
+      byCategory: {
+        splash: splashCount,
+        main: mainCount,
+        backup: backupCount,
+      },
     };
   }
 }
