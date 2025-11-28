@@ -23,6 +23,9 @@ export enum AdPlacement {
   SPLASH = 'splash',
   VIDEO_AD = 'video_ad',
   REWARD_VIDEO = 'reward_video',
+  VPN_CONNECT = 'vpn_connect',
+  VPN_DISCONNECT = 'vpn_disconnect',
+  SERVER_CHANGE = 'server_change',
 }
 
 @Entity('ads')
