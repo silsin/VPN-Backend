@@ -12,7 +12,6 @@ export class DeviceLoginDto {
     description: 'Unique device identifier (minimum 16 characters)',
   })
   @IsString()
-  @MinLength(16, { message: 'Device ID must be at least 16 characters long' })
   deviceId: string;
 
   @ApiProperty({

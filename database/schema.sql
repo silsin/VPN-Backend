@@ -5,6 +5,7 @@
 -- =====================================================
 
 -- Drop existing tables if they exist
+DROP TABLE IF EXISTS device_logins CASCADE;
 DROP TABLE IF EXISTS ad_settings CASCADE;
 DROP TABLE IF EXISTS ads CASCADE;
 DROP TABLE IF EXISTS v2ray_configs CASCADE;
@@ -42,13 +43,17 @@ CREATE TYPE ad_placement AS ENUM ('main_page', 'splash', 'video_ad', 'reward_vid
 -- Users Table
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE,
+    password VARCHAR(255),
     username VARCHAR(255),
     "firstName" VARCHAR(255),
     "lastName" VARCHAR(255),
     role user_role NOT NULL DEFAULT 'user',
     status user_status NOT NULL DEFAULT 'active',
+    "deviceId" VARCHAR(255) UNIQUE,
+    "deviceName" VARCHAR(255),
+    platform VARCHAR(255),
+    "pushId" VARCHAR(255),
     "totalConnections" INTEGER NOT NULL DEFAULT 0,
     "totalDataTransferred" BIGINT NOT NULL DEFAULT 0,
     "lastConnectionAt" TIMESTAMP,
@@ -59,6 +64,21 @@ CREATE TABLE users (
     "passwordResetExpires" TIMESTAMP,
     "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Device Logins Table
+CREATE TABLE device_logins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "userId" UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "deviceId" VARCHAR(255) NOT NULL,
+    "deviceName" VARCHAR(255),
+    platform VARCHAR(255),
+    "pushId" VARCHAR(255),
+    "ipAddress" VARCHAR(255),
+    "userAgent" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "loginAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "logoutAt" TIMESTAMP
 );
 
 -- V2Ray Configs Table
@@ -97,6 +117,10 @@ CREATE TABLE ad_settings (
 -- =====================================================
 
 CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_device_id ON users("deviceId");
+CREATE INDEX idx_device_logins_user_id ON device_logins("userId");
+CREATE INDEX idx_device_logins_device_id ON device_logins("deviceId");
+CREATE INDEX idx_device_logins_is_active ON device_logins("isActive");
 CREATE INDEX idx_v2ray_configs_name ON v2ray_configs(name);
 CREATE INDEX idx_v2ray_configs_category ON v2ray_configs(category);
 CREATE INDEX idx_ads_placement ON ads(placement);
@@ -157,5 +181,5 @@ VALUES
 DO $$
 BEGIN
     RAISE NOTICE '✅ Database schema updated successfully!';
-    RAISE NOTICE '📊 Tables created: users, v2ray_configs, ads, ad_settings';
+    RAISE NOTICE '📊 Tables created: users, device_logins, v2ray_configs, ads, ad_settings';
 END $$;

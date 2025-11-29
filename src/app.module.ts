@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { DatabaseConfig } from './config/database.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { DeviceLoginsModule } from './modules/device-logins/device-logins.module';
 import { AdsModule } from './modules/ads/ads.module';
 import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module';
 
@@ -27,6 +28,7 @@ import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module
     ]),
     AuthModule,
     UsersModule,
+    DeviceLoginsModule,
     AdsModule,
     V2RayConfigsModule,
   ],

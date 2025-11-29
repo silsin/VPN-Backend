@@ -27,8 +27,8 @@ export class AuthController {
 
   @Post('device-login')
   @ApiOperation({ summary: 'Login with device ID' })
-  async deviceLogin(@Body() deviceLoginDto: DeviceLoginDto) {
-    return this.authService.deviceLogin(deviceLoginDto);
+  async deviceLogin(@Body() deviceLoginDto: DeviceLoginDto, @Request() req) {
+    return this.authService.deviceLogin(deviceLoginDto, req);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
+import { DeviceLoginsService } from '../device-logins/device-logins.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
@@ -10,6 +11,7 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    private deviceLoginsService: DeviceLoginsService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -62,24 +64,20 @@ export class AuthService {
     }
   }
 
-  validateDeviceId(deviceId: string): boolean {
-    // Validate device ID format
-    // Must be at least 16 characters and contain only alphanumeric characters and hyphens
-    const deviceIdRegex = /^[a-zA-Z0-9-]{16,}$/;
-    return deviceIdRegex.test(deviceId);
-  }
 
-  async deviceLogin(deviceLoginDto: {
-    deviceId: string;
-    deviceName?: string;
-    platform?: string;
-    pushId?: string;
-  }) {
+
+  async deviceLogin(
+    deviceLoginDto: {
+      deviceId: string;
+      deviceName?: string;
+      platform?: string;
+      pushId?: string;
+    },
+    req?: any,
+  ) {
     // Validate device ID format
-    if (!this.validateDeviceId(deviceLoginDto.deviceId)) {
-      throw new UnauthorizedException(
-        'Invalid device ID format. Device ID must be at least 16 characters and contain only letters, numbers, and hyphens.',
-      );
+    if (!deviceLoginDto.deviceId) {
+      throw new UnauthorizedException('Device ID is required');
     }
 
     // Check if user exists with this device ID
@@ -106,6 +104,21 @@ export class AuthService {
 
     // Update last login
     await this.usersService.updateLastLogin(user.id);
+
+    // Extract IP address and user agent from request
+    const ipAddress = req?.ip || req?.connection?.remoteAddress || null;
+    const userAgent = req?.headers?.['user-agent'] || null;
+
+    // Create device login record
+    await this.deviceLoginsService.create({
+      userId: user.id,
+      deviceId: deviceLoginDto.deviceId,
+      deviceName: deviceLoginDto.deviceName,
+      platform: deviceLoginDto.platform,
+      pushId: deviceLoginDto.pushId,
+      ipAddress,
+      userAgent,
+    });
 
     // Generate JWT token
     const payload = { 

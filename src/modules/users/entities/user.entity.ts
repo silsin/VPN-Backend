@@ -89,7 +89,8 @@ export class User {
   @Column({ nullable: true })
   passwordResetExpires: Date;
 
-
+  @OneToMany('DeviceLogin', 'user')
+  deviceLogins: any[];
 
   @CreateDateColumn()
   createdAt: Date;
