@@ -60,6 +60,16 @@ export class DeviceLoginsService {
     });
   }
 
+  async findActiveByDeviceId(deviceId: string): Promise<DeviceLogin | null> {
+    return await this.deviceLoginsRepository.findOne({
+      where: { deviceId, isActive: true },
+    });
+  }
+
+  async update(id: string, updateData: Partial<DeviceLogin>): Promise<void> {
+    await this.deviceLoginsRepository.update(id, updateData);
+  }
+
   async markAsLoggedOut(id: string): Promise<void> {
     await this.deviceLoginsRepository.update(id, {
       isActive: false,

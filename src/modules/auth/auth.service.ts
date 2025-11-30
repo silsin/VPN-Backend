@@ -109,16 +109,30 @@ export class AuthService {
     const ipAddress = req?.ip || req?.connection?.remoteAddress || null;
     const userAgent = req?.headers?.['user-agent'] || null;
 
-    // Create device login record
-    await this.deviceLoginsService.create({
-      userId: user.id,
-      deviceId: deviceLoginDto.deviceId,
-      deviceName: deviceLoginDto.deviceName,
-      platform: deviceLoginDto.platform,
-      pushId: deviceLoginDto.pushId,
-      ipAddress,
-      userAgent,
-    });
+    // Check for existing active login
+    const existingLogin = await this.deviceLoginsService.findActiveByDeviceId(deviceLoginDto.deviceId);
+
+    if (existingLogin) {
+      await this.deviceLoginsService.update(existingLogin.id, {
+        deviceName: deviceLoginDto.deviceName,
+        platform: deviceLoginDto.platform,
+        pushId: deviceLoginDto.pushId,
+        ipAddress,
+        userAgent,
+        loginAt: new Date(),
+      });
+    } else {
+      // Create device login record
+      await this.deviceLoginsService.create({
+        userId: user.id,
+        deviceId: deviceLoginDto.deviceId,
+        deviceName: deviceLoginDto.deviceName,
+        platform: deviceLoginDto.platform,
+        pushId: deviceLoginDto.pushId,
+        ipAddress,
+        userAgent,
+      });
+    }
 
     // Generate JWT token
     const payload = { 
