@@ -10,6 +10,8 @@ import { UsersModule } from './modules/users/users.module';
 import { DeviceLoginsModule } from './modules/device-logins/device-logins.module';
 import { AdsModule } from './modules/ads/ads.module';
 import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module';
+import { DialogsModule } from './modules/dialogs/dialogs.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module
     DeviceLoginsModule,
     AdsModule,
     V2RayConfigsModule,
+    DialogsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

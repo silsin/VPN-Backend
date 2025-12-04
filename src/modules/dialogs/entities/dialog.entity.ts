@@ -1,0 +1,82 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+
+export enum DialogType {
+  IN_APP = 'in-app',
+  PUSH = 'push',
+  BOTH = 'both',
+}
+
+export enum DialogStatus {
+  DRAFT = 'draft',
+  SCHEDULED = 'scheduled',
+  SENT = 'sent',
+  CANCELLED = 'cancelled',
+}
+
+export enum DialogTarget {
+  ALL = 'all',
+  ANDROID = 'android',
+  IOS = 'ios',
+}
+
+@Entity('dialogs')
+export class Dialog {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    enum: DialogType,
+  })
+  type: DialogType;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    enum: DialogStatus,
+    default: DialogStatus.DRAFT,
+  })
+  status: DialogStatus;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    enum: DialogTarget,
+    default: DialogTarget.ALL,
+  })
+  target: DialogTarget;
+
+  @Column({ type: 'varchar', length: 255 })
+  title: string;
+
+  @Column({ type: 'text' })
+  message: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  imageUrl: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  actionUrl: string;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  scheduleTime: Date;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  sentTime: Date;
+
+  @Column({ type: 'uuid', nullable: true })
+  createdBy: string;
+
+  @CreateDateColumn({ type: 'timestamp with time zone' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamp with time zone' })
+  updatedAt: Date;
+}
