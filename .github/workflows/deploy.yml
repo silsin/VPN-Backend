@@ -18,7 +18,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install --production=false
+        run: npm install --force
 
       - name: Build project
         run: npm run build
