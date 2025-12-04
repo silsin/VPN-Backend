@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 import { ConfigService } from '@nestjs/config';
@@ -21,7 +21,7 @@ import { getBullConfig } from '../../config/queue.config';
         getBullConfig(configService),
       inject: [ConfigService],
     }),
-    DialogsModule,
+    forwardRef(() => DialogsModule),
   ],
   providers: [
     FirebaseConfig,
