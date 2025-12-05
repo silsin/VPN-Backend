@@ -90,16 +90,6 @@ export class CreateDialogDto {
     type: [DialogButtonDto],
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      try {
-        return JSON.parse(value);
-      } catch (e) {
-        return [];
-      }
-    }
-    return value;
-  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => DialogButtonDto)

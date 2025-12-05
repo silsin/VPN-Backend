@@ -13,7 +13,7 @@ export class DialogButtonDto {
   label: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   actionUrl?: string;
 
   @IsOptional()
