@@ -38,6 +38,8 @@ export class DialogsService {
       ...createDialogDto,
       createdBy: userId,
     });
+    this.logger.log(`Creating dialog with payload: ${JSON.stringify(createDialogDto)}`);
+
 
     // Determine initial status
     if (createDialogDto.scheduleTime) {

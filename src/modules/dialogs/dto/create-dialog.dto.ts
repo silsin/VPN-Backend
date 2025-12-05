@@ -11,6 +11,7 @@ import {
   IsArray,
   ValidateNested,
 } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { DialogType, DialogTarget } from '../entities/dialog.entity';
 import { DialogButtonDto } from './dialog-button.dto';
 
@@ -90,6 +91,16 @@ export class CreateDialogDto {
     type: [DialogButtonDto],
   })
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch (e) {
+        return [];
+      }
+    }
+    return value;
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => DialogButtonDto)

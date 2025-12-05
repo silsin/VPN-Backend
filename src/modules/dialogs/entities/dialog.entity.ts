@@ -65,7 +65,7 @@ export class Dialog {
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'action_url' })
   actionUrl: string;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true, name: 'buttons' })
   buttons: Array<{
     label: string;
     actionUrl?: string;
