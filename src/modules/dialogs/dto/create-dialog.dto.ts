@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsString,
   IsEnum,
@@ -7,8 +8,11 @@ import {
   IsDateString,
   MinLength,
   MaxLength,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
 import { DialogType, DialogTarget } from '../entities/dialog.entity';
+import { DialogButtonDto } from './dialog-button.dto';
 
 export class CreateDialogDto {
   @ApiProperty({
@@ -67,6 +71,29 @@ export class CreateDialogDto {
   @IsOptional()
   @IsUrl()
   actionUrl?: string;
+
+  @ApiProperty({
+    example: [
+      {
+        label: 'دانلود',
+        actionUrl: 'https://example.com/download',
+        style: 'primary',
+      },
+      {
+        label: 'بعداً',
+        action: 'dismiss',
+        style: 'secondary',
+      },
+    ],
+    description: 'Array of action buttons for the dialog',
+    required: false,
+    type: [DialogButtonDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DialogButtonDto)
+  buttons?: DialogButtonDto[];
 
   @ApiProperty({
     example: '2024-12-31T23:59:59Z',
