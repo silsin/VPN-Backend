@@ -1,6 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { DialogsService } from './dialogs.service';
 import { DialogsController } from './dialogs.controller';

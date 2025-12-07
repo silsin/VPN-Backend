@@ -1,6 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bull';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from './notifications.service';
 import { SchedulerService } from './scheduler.service';
