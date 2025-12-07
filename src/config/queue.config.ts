@@ -1,9 +1,9 @@
-import { BullModuleOptions } from '@nestjs/bullmq';
+import { QueueOptions } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 
 export const getBullConfig = (
   configService: ConfigService,
-): BullModuleOptions => ({
+): QueueOptions => ({
   connection: {
     host: configService.get<string>('REDIS_HOST', 'localhost'),
     port: parseInt(configService.get<string>('REDIS_PORT', '6379'), 10),
