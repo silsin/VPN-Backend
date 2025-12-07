@@ -1,0 +1,1 @@
+ALTER TABLE v2ray_configs ADD COLUMN country VARCHAR(2) NULL;

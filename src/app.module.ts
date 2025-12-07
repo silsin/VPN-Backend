@@ -12,6 +12,7 @@ import { AdsModule } from './modules/ads/ads.module';
 import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module';
 import { DialogsModule } from './modules/dialogs/dialogs.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     V2RayConfigsModule,
     DialogsModule,
     NotificationsModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

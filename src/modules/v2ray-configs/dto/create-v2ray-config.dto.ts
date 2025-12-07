@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString, MinLength, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { V2RayConfigType, V2RayConfigCategory } from '../entities/v2ray-config.entity';
 
@@ -16,6 +16,11 @@ export class CreateV2RayConfigDto {
   @ApiProperty({ enum: V2RayConfigCategory, example: V2RayConfigCategory.MAIN })
   @IsEnum(V2RayConfigCategory)
   category: V2RayConfigCategory;
+
+  @ApiProperty({ example: 'ir', required: false, description: 'ISO two-letter country code' })
+  @IsString()
+  @IsOptional()
+  country?: string;
 
   @ApiProperty({ example: 'vless://...' })
   @IsString()

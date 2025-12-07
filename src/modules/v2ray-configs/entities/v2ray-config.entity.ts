@@ -39,6 +39,9 @@ export class V2RayConfig {
   })
   category: V2RayConfigCategory;
 
+  @Column({ nullable: true, length: 2 })
+  country: string;
+
   @Column({ type: 'text' })
   content: string;
 
