@@ -18,10 +18,10 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run:  yarn install
+        run:  npm i
 
       - name: Build project
-        run:  yarn build
+        run:  npm run build
 
       - name: Deploy to server
         uses: appleboy/ssh-action@v0.1.8
@@ -33,6 +33,6 @@ jobs:
           script: |
             cd ${{ secrets.SERVER_PATH }}
             git pull
-            yarn install --frozen-lockfile
-            yarn build
+            npm i
+            npm run build
             pm2 restart all
