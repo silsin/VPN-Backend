@@ -42,6 +42,16 @@ export class DialogsService {
 
 
     // Determine initial status
+    if (createDialogDto.expireTime) {
+      const expireTime = new Date(createDialogDto.expireTime);
+      if (Number.isNaN(expireTime.getTime())) {
+        throw new BadRequestException(
+          'Expire time must be a valid ISO date string',
+        );
+      }
+      dialog.expireTime = expireTime;
+    }
+
     if (createDialogDto.scheduleTime) {
       const scheduleTime = new Date(createDialogDto.scheduleTime);
       if (scheduleTime <= new Date()) {
@@ -191,6 +201,14 @@ export class DialogsService {
 
       dialog.scheduleTime = newScheduleTime;
       dialog.status = DialogStatus.SCHEDULED;
+    }
+
+    if (updateDialogDto.expireTime) {
+      const expireTime = new Date(updateDialogDto.expireTime);
+      if (Number.isNaN(expireTime.getTime())) {
+        throw new BadRequestException('Expire time must be a valid ISO date string');
+      }
+      dialog.expireTime = expireTime;
     }
 
     // Update fields
@@ -348,7 +366,8 @@ export class DialogsService {
     const queryBuilder = this.dialogRepository
       .createQueryBuilder('dialog')
       .where('dialog.status = :status', { status: DialogStatus.SENT })
-      .andWhere("(dialog.type = 'in-app' OR dialog.type = 'both')");
+      .andWhere("(dialog.type = 'in-app' OR dialog.type = 'both')")
+      .andWhere('(dialog.expireTime IS NULL OR dialog.expireTime > NOW())');
 
     if (platform) {
       queryBuilder.andWhere(

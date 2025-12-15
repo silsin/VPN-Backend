@@ -35,6 +35,15 @@ export class CreateDialogDto {
   target?: DialogTarget;
 
   @ApiProperty({
+    example: 'high',
+    description: 'Dialog priority',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  priority: string;
+
+  @ApiProperty({
     example: 'Special Offer!',
     description: 'Dialog title',
     minLength: 1,
@@ -103,4 +112,13 @@ export class CreateDialogDto {
   @IsOptional()
   @IsDateString()
   scheduleTime?: string;
+
+  @ApiProperty({
+    example: '2024-12-31T23:59:59Z',
+    description: 'Expire time for dialog (ISO 8601 format)',
+    required: false,
+  })
+  @IsOptional()
+  @IsDateString()
+  expireTime?: string;
 }

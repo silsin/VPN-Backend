@@ -59,6 +59,9 @@ export class Dialog {
   @Column({ type: 'text' })
   message: string;
 
+  @Column({ type: 'varchar', length: 50 })
+  priority: string;
+
   @Column({ type: 'varchar', length: 500, nullable: true, name: 'image_url' })
   imageUrl: string;
 
@@ -75,6 +78,13 @@ export class Dialog {
 
   @Column({ type: 'timestamp with time zone', nullable: true, name: 'schedule_time' })
   scheduleTime: Date;
+
+  @Column({
+    type: 'timestamp with time zone',
+    nullable: true,
+    name: 'expire_time',
+  })
+  expireTime: Date;
 
   @Column({ type: 'timestamp with time zone', nullable: true, name: 'sent_time' })
   sentTime: Date;
