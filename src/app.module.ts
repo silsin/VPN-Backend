@@ -13,6 +13,7 @@ import { V2RayConfigsModule } from './modules/v2ray-configs/v2ray-configs.module
 import { DialogsModule } from './modules/dialogs/dialogs.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { HandshakeModule } from './modules/handshake/handshake.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     DialogsModule,
     NotificationsModule,
     SettingsModule,
+    HandshakeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
