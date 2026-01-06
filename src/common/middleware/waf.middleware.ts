@@ -59,24 +59,24 @@ export class WafMiddleware implements NestMiddleware {
       
       if (this.checkAttack(lowerInput, 'SQL')) {
           this.logger.warn(`SQL Injection Attempt detected: ${lowerInput} - IP: ${req.ip}`);
-          throw new HttpException('Access Denied (SQL Checks)', HttpStatus.BAD_REQUEST);
+          throw new HttpException('Access Denied (SQL Checks)', HttpStatus.FORBIDDEN);
       }
       if (this.checkAttack(lowerInput, 'XSS')) {
           this.logger.warn(`XSS Attempt detected: ${lowerInput} - IP: ${req.ip}`);
-          throw new HttpException('Access Denied (XSS Checks)', HttpStatus.BAD_REQUEST);
+          throw new HttpException('Access Denied (XSS Checks)', HttpStatus.FORBIDDEN);
       }
       if (this.checkAttack(lowerInput, 'LFI')) {
           this.logger.warn(`LFI Attempt detected: ${lowerInput} - IP: ${req.ip}`);
-          throw new HttpException('Access Denied (LFI Checks)', HttpStatus.BAD_REQUEST);
+          throw new HttpException('Access Denied (LFI Checks)', HttpStatus.FORBIDDEN);
       }
       if (this.checkAttack(lowerInput, 'RFI')) {
         // RFI is tricky for valid URLs in body, proceed with caution or specific context
          this.logger.warn(`RFI Attempt detected: ${lowerInput} - IP: ${req.ip}`);
-         throw new HttpException('Access Denied (RFI Checks)', HttpStatus.BAD_REQUEST);
+         throw new HttpException('Access Denied (RFI Checks)', HttpStatus.FORBIDDEN);
       }
       if (this.checkAttack(lowerInput, 'RCE')) {
           this.logger.warn(`RCE Attempt detected: ${lowerInput} - IP: ${req.ip}`);
-          throw new HttpException('Access Denied (RCE Checks)', HttpStatus.BAD_REQUEST);
+          throw new HttpException('Access Denied (RCE Checks)', HttpStatus.FORBIDDEN);
       }
     }
 
