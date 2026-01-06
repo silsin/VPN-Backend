@@ -36,6 +36,7 @@ export class WafMiddleware implements NestMiddleware {
   };
 
   use(req: Request, res: Response, next: NextFunction) {
+    this.logger.log(`Scanning request: ${req.method} ${req.url}`);
     // 1. Check User-Agent for bots
     const userAgent = (req.headers['user-agent'] || '').toLowerCase();
     if (this.isBot(userAgent)) {
