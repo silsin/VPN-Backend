@@ -34,7 +34,7 @@ CREATE TYPE v2ray_config_type AS ENUM ('v2ray_link', 'json_config');
 CREATE TYPE v2ray_config_category AS ENUM ('splash', 'main', 'backup');
 CREATE TYPE ad_type AS ENUM ('banner', 'video', 'reward');
 CREATE TYPE ad_platform AS ENUM ('android', 'ios', 'both');
-CREATE TYPE ad_placement AS ENUM ('main_page', 'splash', 'video_ad', 'reward_video');
+CREATE TYPE ad_placement AS ENUM ('main_page', 'splash', 'video_ad', 'reward_video', 'vpn_connect', 'vpn_disconnect', 'server_change');
 
 -- =====================================================
 -- Create Tables

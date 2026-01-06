@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -14,6 +14,7 @@ import { DialogsModule } from './modules/dialogs/dialogs.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { HandshakeModule } from './modules/handshake/handshake.module';
+import { WafMiddleware } from './common/middleware/waf.middleware';
 
 @Module({
   imports: [
@@ -43,5 +44,11 @@ import { HandshakeModule } from './modules/handshake/handshake.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(WafMiddleware)
+      .forRoutes('*');
+  }
+}
 
