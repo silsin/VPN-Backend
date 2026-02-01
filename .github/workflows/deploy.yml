@@ -2,7 +2,7 @@ name: Deploy to Ubuntu Server
 
 on:
   push:
-    branches: [ "main" ]   # اگر master استفاده می‌کنید تغییر دهید
+    branches: [ "main" , "xor" ]   # اگر master استفاده می‌کنید تغییر دهید
 
 jobs:
   deploy:
