@@ -9,6 +9,9 @@ import {
 export enum V2RayConfigType {
   LINK = 'v2ray_link',
   JSON = 'json_config',
+  OPENVPN = 'openvpn',
+  SSTP = 'sstp',
+  SSH = 'ssh',
 }
 
 export enum V2RayConfigCategory {

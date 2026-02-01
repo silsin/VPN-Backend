@@ -30,7 +30,7 @@ DROP TYPE IF EXISTS ad_placement CASCADE;
 
 CREATE TYPE user_role AS ENUM ('user', 'admin');
 CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
-CREATE TYPE v2ray_config_type AS ENUM ('v2ray_link', 'json_config');
+CREATE TYPE v2ray_config_type AS ENUM ('v2ray_link', 'json_config', 'openvpn', 'sstp', 'ssh');
 CREATE TYPE v2ray_config_category AS ENUM ('splash', 'main', 'backup');
 CREATE TYPE ad_type AS ENUM ('banner', 'video', 'reward');
 CREATE TYPE ad_platform AS ENUM ('android', 'ios', 'both');

@@ -14,6 +14,7 @@ import { DialogsModule } from './modules/dialogs/dialogs.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { HandshakeModule } from './modules/handshake/handshake.module';
+import { DatabaseMigrationModule } from './modules/database-migration/database-migration.module';
 import { WafMiddleware } from './common/middleware/waf.middleware';
 
 @Module({
@@ -40,6 +41,7 @@ import { WafMiddleware } from './common/middleware/waf.middleware';
     NotificationsModule,
     SettingsModule,
     HandshakeModule,
+    DatabaseMigrationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

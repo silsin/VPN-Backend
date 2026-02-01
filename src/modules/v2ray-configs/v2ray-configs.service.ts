@@ -63,6 +63,16 @@ export class V2RayConfigsService {
     const jsonCount = await this.v2rayConfigsRepository.count({
       where: { type: V2RayConfigType.JSON },
     });
+    const ovpnCount = await this.v2rayConfigsRepository.count({
+      where: { type: V2RayConfigType.OPENVPN },
+    });
+    const sstpCount = await this.v2rayConfigsRepository.count({
+      where: { type: V2RayConfigType.SSTP },
+    });
+    const sshCount = await this.v2rayConfigsRepository.count({
+      where: { type: V2RayConfigType.SSH },
+    });
+    
     const splashCount = await this.v2rayConfigsRepository.count({
       where: { category: V2RayConfigCategory.SPLASH },
     });
@@ -78,6 +88,9 @@ export class V2RayConfigsService {
       byType: {
         link: linkCount,
         json: jsonCount,
+        openvpn: ovpnCount,
+        sstp: sstpCount,
+        ssh: sshCount,
       },
       byCategory: {
         splash: splashCount,
