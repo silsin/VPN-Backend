@@ -14,7 +14,7 @@ The V2Ray configs system allows administrators to manage VPN server configuratio
 | :--- | :--- | :--- |
 | `id` | `uuid` | Unique identifier for the configuration. |
 | `name` | `string` | Unique name for the configuration. |
-| `type` | `enum` | Configuration format: `v2ray_link`, `json_config`. |
+| `type` | `enum` | Configuration format: `v2ray_link`, `json_config`, `openvpn`, `sstp`, `ssh`. |
 | `category` | `enum` | Usage category: `splash`, `main`, `backup`. |
 | `content` | `text` | The actual configuration string (V2Ray link or JSON). |
 | `createdAt` | `Date` | Timestamp of creation. |
@@ -25,6 +25,9 @@ The V2Ray configs system allows administrators to manage VPN server configuratio
 **`V2RayConfigType`**
 - `LINK` = `'v2ray_link'` - V2Ray protocol links (e.g., vless://, vmess://)
 - `JSON` = `'json_config'` - Full JSON configuration format
+- `OPENVPN` = `'openvpn'` - OpenVPN configuration file content
+- `SSTP` = `'sstp'` - SSTP configuration (JSON string)
+- `SSH` = `'ssh'` - SSH configuration (JSON string)
 
 **`V2RayConfigCategory`**
 - `SPLASH` = `'splash'` - Configurations used during app splash screen
@@ -54,7 +57,7 @@ All endpoints require JWT authentication via Bearer token.
 -   **Method:** `GET`
 -   **Query Parameters:**
     - `search` (optional): Filter by name (partial match)
-    - `type` (optional): Filter by type (`v2ray_link` or `json_config`)
+    - `type` (optional): Filter by type (`v2ray_link`, `json_config`, `openvpn`, `sstp`, `ssh`)
     - `category` (optional): Filter by category (`splash`, `main`, or `backup`)
 -   **Response:** Array of `V2RayConfig` objects, ordered by creation date (newest first)
 -   **Examples:**
@@ -87,7 +90,10 @@ All endpoints require JWT authentication via Bearer token.
       "total": 10,
       "byType": {
         "link": 7,
-        "json": 3
+        "json": 3,
+        "openvpn": 2,
+        "sstp": 1,
+        "ssh": 1
       },
       "byCategory": {
         "splash": 2,

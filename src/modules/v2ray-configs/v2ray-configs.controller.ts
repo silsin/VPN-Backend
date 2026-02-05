@@ -26,6 +26,9 @@ export class V2RayConfigsController {
   @Post()
   @ApiOperation({ summary: 'Create a new V2Ray configuration' })
   create(@Body() createV2RayConfigDto: CreateV2RayConfigDto) {
+    if (createV2RayConfigDto.content) {
+      createV2RayConfigDto.content = Buffer.from(createV2RayConfigDto.content, 'base64').toString('utf-8');
+    }
     return this.v2rayConfigsService.create(createV2RayConfigDto);
   }
 
@@ -60,6 +63,9 @@ export class V2RayConfigsController {
     @Param('id') id: string,
     @Body() updateV2RayConfigDto: UpdateV2RayConfigDto,
   ) {
+    if (updateV2RayConfigDto.content) {
+      updateV2RayConfigDto.content = Buffer.from(updateV2RayConfigDto.content, 'base64').toString('utf-8');
+    }
     return this.v2rayConfigsService.update(id, updateV2RayConfigDto);
   }
 
