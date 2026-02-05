@@ -8,7 +8,7 @@ export class WafMiddleware implements NestMiddleware {
   // Payload patterns adapted from the provided PHP Waf class
   private readonly payloads = {
     SQL: [
-      "'", "´", "select from", "select * from", "onion", "union", "udpate users set", "where username",
+      "´", "select from", "select * from", "onion", "union", "udpate users set", "where username",
       "drop table", "0x50", "mid((select", "union(((((((", "concat(0x", "concat(", "or boolean",
       "or having", "or '1", "0x3c62723e3c62723e3c62723e", "0x3c696d67207372633d22",
       "+#1q%0aunion all#qa%0a#%0aselect", "unhex(hex(concat(", "table_schema,0x3e,",
@@ -52,30 +52,39 @@ export class WafMiddleware implements NestMiddleware {
       // You can add headers checks here if needed, but risky for false positives on authorized headers
     });
 
+    const ignoreFields = ['content']; // Fields to exclude from WAF scanning
+
     // 3. Scan inputs for attacks
     for (const input of allInputs) {
-      if (!input) continue;
-      const lowerInput = String(input).toLowerCase();
+      if (!input.value) continue;
+      const lowerInput = String(input.value).toLowerCase();
       
-      if (this.checkAttack(lowerInput, 'SQL')) {
-          this.logger.warn(`SQL Injection Attempt detected: ${lowerInput} - IP: ${req.ip}`);
+      // Skip ignored fields
+      if (ignoreFields.includes(input.key)) continue;
+
+      const sqlAttack = this.checkAttack(lowerInput, 'SQL');
+      if (sqlAttack) {
+          this.logger.warn(`SQL Injection Attempt detected. Trigger: "${sqlAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (SQL Checks)', HttpStatus.FORBIDDEN);
       }
-      if (this.checkAttack(lowerInput, 'XSS')) {
-          this.logger.warn(`XSS Attempt detected: ${lowerInput} - IP: ${req.ip}`);
+      const xssAttack = this.checkAttack(lowerInput, 'XSS');
+      if (xssAttack) {
+          this.logger.warn(`XSS Attempt detected. Trigger: "${xssAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (XSS Checks)', HttpStatus.FORBIDDEN);
       }
-      if (this.checkAttack(lowerInput, 'LFI')) {
-          this.logger.warn(`LFI Attempt detected: ${lowerInput} - IP: ${req.ip}`);
+      const lfiAttack = this.checkAttack(lowerInput, 'LFI');
+      if (lfiAttack) {
+          this.logger.warn(`LFI Attempt detected. Trigger: "${lfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (LFI Checks)', HttpStatus.FORBIDDEN);
       }
-      if (this.checkAttack(lowerInput, 'RFI')) {
-        // RFI is tricky for valid URLs in body, proceed with caution or specific context
-         this.logger.warn(`RFI Attempt detected: ${lowerInput} - IP: ${req.ip}`);
+      const rfiAttack = this.checkAttack(lowerInput, 'RFI');
+      if (rfiAttack) {
+         this.logger.warn(`RFI Attempt detected. Trigger: "${rfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
          throw new HttpException('Access Denied (RFI Checks)', HttpStatus.FORBIDDEN);
       }
-      if (this.checkAttack(lowerInput, 'RCE')) {
-          this.logger.warn(`RCE Attempt detected: ${lowerInput} - IP: ${req.ip}`);
+      const rceAttack = this.checkAttack(lowerInput, 'RCE');
+      if (rceAttack) {
+          this.logger.warn(`RCE Attempt detected. Trigger: "${rceAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (RCE Checks)', HttpStatus.FORBIDDEN);
       }
     }
@@ -88,25 +97,28 @@ export class WafMiddleware implements NestMiddleware {
     return this.payloads.TOT.some(bot => userAgent.includes(bot.toLowerCase()));
   }
 
-  private checkAttack(input: string, type: 'SQL' | 'XSS' | 'LFI' | 'RFI' | 'RCE'): boolean {
-    return this.payloads[type].some(payload => input.includes(payload));
+  private checkAttack(input: string, type: 'SQL' | 'XSS' | 'LFI' | 'RFI' | 'RCE'): string | null {
+    const found = this.payloads[type].find(payload => input.includes(payload));
+    return found || null;
   }
 
-  // Helper to flatten nested objects into a single array of strings
-  private flattenObject(obj: any): string[] {
-    let result: string[] = [];
+  // Helper to flatten nested objects into a single array of objects with key and value
+  private flattenObject(obj: any, parentKey = ''): { key: string, value: string }[] {
+    let result: { key: string, value: string }[] = [];
     
     if (!obj || (typeof obj !== 'object' && !Array.isArray(obj))) {
-        return [String(obj)];
+        return [{ key: parentKey, value: String(obj) }];
     }
 
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
         const value = obj[key];
+        const newKey = parentKey ? `${parentKey}.${key}` : key;
+        
         if (typeof value === 'object' && value !== null) {
-          result = result.concat(this.flattenObject(value));
+          result = result.concat(this.flattenObject(value, newKey));
         } else {
-          result.push(String(value));
+          result.push({ key: newKey, value: String(value) });
         }
       }
     }
