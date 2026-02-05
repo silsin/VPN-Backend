@@ -1,3 +1,4 @@
+-- NO_TRANSACTION
 -- Migration to add new protocols to v2ray_config_type enum
 -- These values are required for OpenVPN, SSTP, and SSH support
 

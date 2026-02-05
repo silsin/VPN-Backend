@@ -49,10 +49,14 @@ export class DatabaseMigrationService implements OnModuleInit {
         if (alreadyExecuted.length === 0) {
           this.logger.log(`Executing migration: ${file}`);
           const sql = fs.readFileSync(path.join(this.migrationsPath, file), 'utf8');
-          
+          const runInTransaction = !sql.includes('-- NO_TRANSACTION');
+
           const queryRunner = this.dataSource.createQueryRunner();
           await queryRunner.connect();
-          await queryRunner.startTransaction();
+
+          if (runInTransaction) {
+            await queryRunner.startTransaction();
+          }
 
           try {
             await queryRunner.query(sql);
@@ -60,11 +64,15 @@ export class DatabaseMigrationService implements OnModuleInit {
               'INSERT INTO "__migrations_history" (name) VALUES ($1)',
               [file]
             );
-            await queryRunner.commitTransaction();
+            if (runInTransaction) {
+              await queryRunner.commitTransaction();
+            }
             this.logger.log(`Successfully executed: ${file}`);
           } catch (err) {
-            await queryRunner.rollbackTransaction();
-            this.logger.error(`Failed to execute migration ${file}. Transaction rolled back.`);
+            if (runInTransaction) {
+              await queryRunner.rollbackTransaction();
+            }
+            this.logger.error(`Failed to execute migration ${file}. ${runInTransaction ? 'Transaction rolled back.' : ''}`);
             throw err; // Stop the whole process if a migration fails
           } finally {
             await queryRunner.release();
