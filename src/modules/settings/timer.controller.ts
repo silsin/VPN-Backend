@@ -24,7 +24,7 @@ export class TimerController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update timer configurations' })
   @ApiResponse({ status: 200, description: 'Timer configurations updated successfully' })
-  async updateConfig(@Body() updates: any[]) {
+  async updateConfig(@Body() updates: any) {
     return this.timerService.updateTimerConfigs(updates);
   }
 

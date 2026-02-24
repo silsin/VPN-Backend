@@ -98,8 +98,11 @@ export class TimerService {
     return response;
   }
 
-  async updateTimerConfigs(updates: any[]): Promise<any> {
-    for (const update of updates) {
+  async updateTimerConfigs(updates: any): Promise<any> {
+    // Handle both single object and array of objects
+    const updatesArray = Array.isArray(updates) ? updates : [updates];
+    
+    for (const update of updatesArray) {
       const { timer_id, ...configData } = update;
       
       let config = await this.timerConfigRepository.findOne({ 
