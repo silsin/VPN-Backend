@@ -5,7 +5,7 @@ import { Request, Response, NextFunction } from 'express';
 export class WafMiddleware implements NestMiddleware {
   private readonly logger = new Logger(WafMiddleware.name);
 
-  // Payload patterns adapted from the provided PHP Waf class
+
   private readonly payloads = {
     SQL: [
       "´", "select from", "select * from", "onion", "union", "udpate users set", "where username",
@@ -29,7 +29,7 @@ export class WafMiddleware implements NestMiddleware {
       "&cmd=", "system(", "whoami", "mkdir", "wget%20", "exec(", "<!--#exec",
       "<?php", "cat%20", "/etc/passwd", "ping%20", "echo%20", "|%20ls%20-l%20/", "cd%20"
     ],
-    TOT: [ // "BOT" in the original, but let's keep it specific or merge. The PHP had a 'BOT' category.
+    TOT: [ 
         "sqlmap", "nikto", "nmap", "arachni", "python-requests", "wget", "curl", "commix", 
         "havij", "w3af", "zeus", "shodan"
     ]

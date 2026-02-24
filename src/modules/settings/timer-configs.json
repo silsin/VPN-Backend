@@ -1,0 +1,71 @@
+{
+  "timer_configs": {
+    "connection_management": {
+      "auto_disconnect": {
+        "enabled": true,
+        "default_duration_seconds": 180,
+        "max_duration_seconds": 3600,
+        "backend_control": true
+      },
+      "connection_timeout": {
+        "enabled": true,
+        "timeout_seconds": 15,
+        "min_timeout": 5,
+        "max_timeout": 60,
+        "backend_control": true
+      },
+      "status_polling": {
+        "enabled": true,
+        "interval_seconds": 2,
+        "min_interval": 1,
+        "max_interval": 10,
+        "backend_control": true
+      }
+    },
+    "statistics": {
+      "vpn_stats": {
+        "enabled": true,
+        "interval_seconds": 5,
+        "backend_control": true
+      },
+      "protocol_stats": {
+        "enabled": true,
+        "interval_seconds": 5,
+        "backend_control": true
+      },
+      "ik_e_v2_stats": {
+        "enabled": true,
+        "interval_seconds": 2,
+        "backend_control": true
+      }
+    },
+    "monitoring": {
+      "background_ping": {
+        "enabled": true,
+        "interval_seconds": 60,
+        "min_interval": 30,
+        "max_interval": 300,
+        "backend_control": true
+      },
+      "session_tracking": {
+        "enabled": true,
+        "interval_seconds": 1,
+        "backend_control": true
+      }
+    },
+    "ui_performance": {
+      "debounce_delay": {
+        "milliseconds": 300,
+        "min_delay": 100,
+        "max_delay": 1000,
+        "backend_control": true
+      },
+      "server_selection_delay": {
+        "seconds": 2,
+        "min_delay": 1,
+        "max_delay": 10,
+        "backend_control": true
+      }
+    }
+  }
+}
