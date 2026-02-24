@@ -107,11 +107,18 @@ export class TimerService {
       });
       
       if (!config) {
-        config = this.timerConfigRepository.create({ 
+        const newConfig: Partial<TimerConfiguration> = {
           id: timer_id,
           category: this.inferCategory(timer_id),
+          enabled: true,
+          backend_control: true,
+          interval_seconds: null,
+          duration_seconds: null,
+          min_value: null,
+          max_value: null,
           ...configData 
-        });
+        };
+        config = this.timerConfigRepository.create(newConfig as TimerConfiguration);
       } else {
         Object.assign(config, configData);
       }
@@ -174,12 +181,12 @@ export class TimerService {
         const timerConfig = this.timerConfigRepository.create({
           id: timerId,
           category,
-          enabled: config.enabled,
-          backend_control: config.backend_control,
-          interval_seconds: config.interval_seconds || null,
-          duration_seconds: config.duration_seconds || config.default_duration_seconds || null,
-          min_value: config.min_interval || config.min_timeout || config.min_delay || null,
-          max_value: config.max_interval || config.max_timeout || config.max_delay || null,
+          enabled: (config as TimerConfig).enabled,
+          backend_control: (config as TimerConfig).backend_control,
+          interval_seconds: (config as TimerConfig).interval_seconds || null,
+          duration_seconds: (config as TimerConfig).duration_seconds || (config as TimerConfig).default_duration_seconds || null,
+          min_value: (config as TimerConfig).min_interval || (config as TimerConfig).min_timeout || (config as TimerConfig).min_delay || null,
+          max_value: (config as TimerConfig).max_interval || (config as TimerConfig).max_timeout || (config as TimerConfig).max_delay || null,
         });
         
         await this.timerConfigRepository.save(timerConfig);
