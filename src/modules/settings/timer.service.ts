@@ -224,4 +224,32 @@ export class TimerService {
     }
     return 'general';
   }
+
+  async getTimerEvents() {
+    return this.timerEventRepository.find({
+      order: { timestamp: 'DESC' },
+      take: 100
+    });
+  }
+
+  async exportConfigurations() {
+    const configs = await this.getTimerConfigs();
+    return {
+      export_date: new Date().toISOString(),
+      version: '1.0',
+      timer_configs: configs
+    };
+  }
+
+  async importConfigurations(configData: any) {
+    try {
+      const { timer_configs } = configData;
+      if (timer_configs) {
+        await this.updateTimerConfigs(timer_configs);
+      }
+      return { success: true, message: 'Configurations imported successfully' };
+    } catch (error) {
+      throw new Error(`Failed to import configurations: ${error.message}`);
+    }
+  }
 }

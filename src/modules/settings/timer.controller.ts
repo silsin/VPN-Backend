@@ -66,4 +66,31 @@ export class TimerController {
     );
     return { success: true };
   }
+
+  @Get('events')
+  @ApiOperation({ summary: 'Get timer events log' })
+  @ApiResponse({ status: 200, description: 'Return timer events' })
+  async getEvents() {
+    return this.timerService.getTimerEvents();
+  }
+
+  @Get('export')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Export timer configurations' })
+  @ApiResponse({ status: 200, description: 'Timer configurations exported successfully' })
+  async exportConfigurations() {
+    return this.timerService.exportConfigurations();
+  }
+
+  @Post('import')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Import timer configurations' })
+  @ApiResponse({ status: 200, description: 'Timer configurations imported successfully' })
+  async importConfigurations(@Body() configData: any) {
+    return this.timerService.importConfigurations(configData);
+  }
 }

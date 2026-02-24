@@ -52,7 +52,7 @@ export class WafMiddleware implements NestMiddleware {
       // You can add headers checks here if needed, but risky for false positives on authorized headers
     });
 
-    const ignoreFields = ['content']; // Fields to exclude from WAF scanning
+    const ignoreFields = ['content', 'url', 'redirectUrl', 'callbackUrl', 'imageUrl', 'logoUrl', 'baseUrl', 'apiUrl']; // Fields to exclude from WAF scanning
 
     // 3. Scan inputs for attacks
     for (const input of allInputs) {
@@ -77,7 +77,7 @@ export class WafMiddleware implements NestMiddleware {
           this.logger.warn(`LFI Attempt detected. Trigger: "${lfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (LFI Checks)', HttpStatus.FORBIDDEN);
       }
-      const rfiAttack = this.checkAttack(lowerInput, 'RFI');
+      const rfiAttack = this.checkRfiAttack(lowerInput, input.key);
       if (rfiAttack) {
          this.logger.warn(`RFI Attempt detected. Trigger: "${rfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
          throw new HttpException('Access Denied (RFI Checks)', HttpStatus.FORBIDDEN);
@@ -99,6 +99,30 @@ export class WafMiddleware implements NestMiddleware {
 
   private checkAttack(input: string, type: 'SQL' | 'XSS' | 'LFI' | 'RFI' | 'RCE'): string | null {
     const found = this.payloads[type].find(payload => input.includes(payload));
+    return found || null;
+  }
+
+  private checkRfiAttack(input: string, fieldName: string): string | null {
+    // Skip RFI check for known safe URL fields
+    const safeUrlFields = ['url', 'redirectUrl', 'callbackUrl', 'imageUrl', 'logoUrl', 'baseUrl', 'apiUrl'];
+    if (safeUrlFields.includes(fieldName)) {
+      return null;
+    }
+
+    // Check for actual RFI patterns (more sophisticated than just http://)
+    const rfiPatterns = [
+      'http://evil', 'https://evil',
+      'http://attacker', 'https://attacker',
+      'http://malicious', 'https://malicious',
+      'http://shell', 'https://shell',
+      'http://backdoor', 'https://backdoor',
+      'http://php://', 'https://php://',
+      'http://file://', 'https://file://',
+      'http://ftp://', 'https://ftp://',
+      'http://data://', 'https://data://'
+    ];
+
+    const found = rfiPatterns.find(pattern => input.includes(pattern));
     return found || null;
   }
 
