@@ -36,7 +36,7 @@ export class WafMiddleware implements NestMiddleware {
   };
 
   use(req: Request, res: Response, next: NextFunction) {
-    this.logger.log(`Scanning request: ${req.method} ${req.url}`);
+    this.logger.debug(`Scanning request: ${req.method} ${req.url}`);
     // 1. Check User-Agent for bots
     const userAgent = (req.headers['user-agent'] || '').toLowerCase();
     if (this.isBot(userAgent)) {
@@ -52,15 +52,21 @@ export class WafMiddleware implements NestMiddleware {
       // You can add headers checks here if needed, but risky for false positives on authorized headers
     });
 
-    const ignoreFields = ['content', 'url', 'redirectUrl', 'callbackUrl', 'imageUrl', 'logoUrl', 'baseUrl', 'apiUrl']; // Fields to exclude from WAF scanning
+    const ignoreFields = [
+      'content', 'url', 'redirectUrl', 'callbackUrl', 'imageUrl', 'logoUrl',
+      'baseUrl', 'apiUrl', 'password', 'email', 'token', 'accessToken',
+      'refreshToken', 'payload', 'message', 'description', 'body.content',
+      'body.password', 'body.email', 'body.token', 'body.payload',
+    ];
 
     // 3. Scan inputs for attacks
     for (const input of allInputs) {
       if (!input.value) continue;
       const lowerInput = String(input.value).toLowerCase();
-      
-      // Skip ignored fields
-      if (ignoreFields.includes(input.key)) continue;
+
+      // Skip ignored fields — match both leaf key and full dotted path
+      const leafKey = input.key.split('.').pop() ?? input.key;
+      if (ignoreFields.includes(input.key) || ignoreFields.includes(leafKey)) continue;
 
       const sqlAttack = this.checkAttack(lowerInput, 'SQL');
       if (sqlAttack) {
@@ -103,9 +109,13 @@ export class WafMiddleware implements NestMiddleware {
   }
 
   private checkRfiAttack(input: string, fieldName: string): string | null {
-    // Skip RFI check for known safe URL fields
-    const safeUrlFields = ['url', 'redirectUrl', 'callbackUrl', 'imageUrl', 'logoUrl', 'baseUrl', 'apiUrl'];
-    if (safeUrlFields.includes(fieldName)) {
+    // Skip RFI check for known safe URL fields — match both leaf key and full dotted path
+    const safeUrlFields = [
+      'url', 'redirectUrl', 'callbackUrl', 'imageUrl', 'logoUrl', 'baseUrl', 'apiUrl',
+      'password', 'email', 'token', 'accessToken', 'refreshToken', 'payload', 'content',
+    ];
+    const leafKey = fieldName.split('.').pop() ?? fieldName;
+    if (safeUrlFields.includes(fieldName) || safeUrlFields.includes(leafKey)) {
       return null;
     }
 
