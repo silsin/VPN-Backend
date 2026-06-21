@@ -49,10 +49,11 @@ export class TelegramReportService {
       `🕐 <code>${now}</code>`,
       '',
       `📊 <b>Summary</b>`,
-      `  • Total configs: <b>${result.total}</b>`,
-      `  • ✅ Working:    <b>${result.working}</b>`,
-      `  • ❌ Failed:     <b>${result.failed}</b>`,
-      `  • 🗑 Removed:    <b>${result.removed}</b>`,
+      `  • Total configs:    <b>${result.total}</b>`,
+      `  • ✅ Working:        <b>${result.working}</b>`,
+      `  • ❌ Failed:         <b>${result.failed}</b>`,
+      `  • ⏳ Pending removal: <b>${result.pendingRemoval}</b> (need 5 consecutive fails)`,
+      `  • 🗑 Removed:        <b>${result.removed}</b>`,
     ];
 
     // --- Failed configs detail ---
@@ -78,38 +79,49 @@ export class TelegramReportService {
 
   private formatFailedConfig(r: CheckResult): string {
     const endpoint = r.host ? `${r.host}:${r.port}` : 'unknown endpoint';
-    const localStatus = r.localLatencyMs !== null ? `✅ ${r.localLatencyMs}ms` : '❌ unreachable';
+    const transport = r.transport ? ` [${r.transport}]` : '';
+    const localStatus = r.localLatencyMs !== null
+      ? `✅ ${r.localLatencyMs}ms (${r.checkMethod ?? '?'})`
+      : `❌ ${r.checkMethod ?? 'tcp'}`;
 
     const remoteStatus =
       r.remoteNodes.length === 0
         ? 'no data'
         : r.remoteNodes
             .map((n) => {
-              const short = n.node.split('.')[0]; // e.g. "us1"
+              const short = n.node.split('.')[0];
               return n.reachable ? `${short}:✅` : `${short}:❌`;
             })
             .join(' ');
 
+    const streak = r.consecutiveFailures ?? 1;
+    const streakBar = `${'🟥'.repeat(streak)}${'⬜'.repeat(Math.max(0, 5 - streak))} ${streak}/5`;
+
     return (
-      `  ▸ <b>${this.esc(r.name)}</b> [${r.type}]\n` +
+      `  ▸ <b>${this.esc(r.name)}</b> [${r.type}${transport}]\n` +
       `    <code>${this.esc(endpoint)}</code>\n` +
       `    Local: ${localStatus} | Remote: ${remoteStatus}\n` +
+      `    Streak: ${streakBar}\n` +
       (r.error ? `    ⚠ ${this.esc(r.error.slice(0, 120))}\n` : '')
     );
   }
 
   private formatWorkingConfig(r: CheckResult): string {
     const endpoint = r.host ? `${r.host}:${r.port}` : '?';
+    const transport = r.transport ? ` ${r.transport}` : '';
     const localMs = r.localLatencyMs !== null ? `${r.localLatencyMs}ms` : '—';
+    const method = r.checkMethod ? ` (${r.checkMethod})` : '';
     const bestRemote = r.remoteNodes
       .filter((n) => n.reachable && n.latencyMs !== null)
       .sort((a, b) => a.latencyMs - b.latencyMs)[0];
-    const remoteMs = bestRemote ? `${bestRemote.latencyMs}ms (${bestRemote.node.split('.')[0]})` : '—';
+    const remoteMs = bestRemote
+      ? `${bestRemote.latencyMs}ms (${bestRemote.node.split('.')[0]})`
+      : '—';
 
     return (
-      `  ▸ <b>${this.esc(r.name)}</b> ` +
+      `  ▸ <b>${this.esc(r.name)}</b>${transport} ` +
       `<code>${this.esc(endpoint)}</code> ` +
-      `local:${localMs} remote:${remoteMs}`
+      `local:${localMs}${method} remote:${remoteMs}`
     );
   }
 
