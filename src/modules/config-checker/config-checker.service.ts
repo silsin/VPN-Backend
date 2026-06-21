@@ -77,7 +77,7 @@ export class ConfigCheckerService {
   // Scheduled job — every 10 minutes, auto-remove unreachable configs
   // ---------------------------------------------------------------------------
 
-  @Cron('0 */10 * * * *', { name: 'config-health-check' })
+  @Cron('0 */1 * * * *', { name: 'config-health-check' })
   async scheduledCheck(): Promise<void> {
     this.logger.log('⏱  Scheduled config health check triggered');
     await this.checkAll(true);
