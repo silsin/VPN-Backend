@@ -2,6 +2,7 @@ import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseConfig } from './config/database.config';
@@ -15,6 +16,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { SettingsModule } from './modules/settings/settings.module';
 import { HandshakeModule } from './modules/handshake/handshake.module';
 import { DatabaseMigrationModule } from './modules/database-migration/database-migration.module';
+import { ConfigCheckerModule } from './modules/config-checker/config-checker.module';
 import { WafMiddleware } from './common/middleware/waf.middleware';
 
 @Module({
@@ -32,6 +34,7 @@ import { WafMiddleware } from './common/middleware/waf.middleware';
         limit: 100,
       },
     ]),
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     DeviceLoginsModule,
@@ -42,6 +45,7 @@ import { WafMiddleware } from './common/middleware/waf.middleware';
     SettingsModule,
     HandshakeModule,
     DatabaseMigrationModule,
+    ConfigCheckerModule,
   ],
   controllers: [AppController],
   providers: [AppService],
