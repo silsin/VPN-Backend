@@ -297,6 +297,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '/list [page] — list configs with inline buttons',
         '/stats — config counts by type/category',
         '/add &lt;name&gt; &lt;type&gt; &lt;category&gt; [country]',
+        '  country = 2-letter code only (e.g. ir) — optional',
         '  then send config content on the next message',
         '/bulkadd &lt;type&gt; &lt;category&gt; [country]',
         '  then paste multiple lines (see below)',
@@ -487,12 +488,12 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     if (args.length < 3) {
       await this.send(
         chatId,
-        'Usage:\n<code>/add &lt;name&gt; &lt;type&gt; &lt;category&gt; [country]</code>\n\nExample:\n<code>/add Iran-1 v2ray_link main ir</code>',
+        'Usage:\n<code>/add &lt;name&gt; &lt;type&gt; &lt;category&gt; [country]</code>\n\nExample:\n<code>/add Iran-1 v2ray_link main ir</code>\nThen paste the link, or put the link in the same message after country.',
       );
       return;
     }
 
-    const [name, typeRaw, categoryRaw, country] = args;
+    const [name, typeRaw, categoryRaw, ...rest] = args;
     const type = this.parseType(typeRaw);
     const category = this.parseCategory(categoryRaw);
 
@@ -508,6 +509,34 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         chatId,
         `Invalid category <code>${this.esc(categoryRaw)}</code>. Use: splash, main, backup`,
       );
+      return;
+    }
+
+    let country: string | undefined;
+    let content: string | undefined;
+
+    if (rest.length === 0) {
+      // wait for content on next message
+    } else if (rest.length === 1 && this.isValidCountryCode(rest[0])) {
+      country = this.normalizeCountry(rest[0]);
+    } else if (this.looksLikeConfigContent(rest[0])) {
+      content = rest.join(' ');
+    } else if (rest.length >= 2 && this.isValidCountryCode(rest[0])) {
+      country = this.normalizeCountry(rest[0]);
+      content = rest.slice(1).join(' ');
+    } else if (rest.length === 1) {
+      await this.send(
+        chatId,
+        `Invalid country <code>${this.esc(rest[0])}</code>. Use a 2-letter code (e.g. <code>ir</code>), or paste the config link in the next message.`,
+      );
+      this.pendingAdds.set(Number(chatId), { name, type, category });
+      return;
+    } else {
+      content = rest.join(' ');
+    }
+
+    if (content) {
+      await this.saveConfig(chatId, { name, type, category, country }, content);
       return;
     }
 
@@ -553,9 +582,10 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const [typeRaw, categoryRaw, country] = args;
+    const [typeRaw, categoryRaw, countryRaw] = args;
     const type = this.parseType(typeRaw);
     const category = this.parseCategory(categoryRaw);
+    const country = countryRaw ? this.normalizeCountry(countryRaw) : undefined;
 
     if (!type) {
       await this.send(
@@ -570,6 +600,12 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         `Invalid category <code>${this.esc(categoryRaw)}</code>. Use: splash, main, backup`,
       );
       return;
+    }
+    if (countryRaw && !country) {
+      await this.send(
+        chatId,
+        `Invalid country <code>${this.esc(countryRaw)}</code>. Use 2-letter ISO code (e.g. <code>ir</code>). Continuing without country.`,
+      );
     }
 
     this.pendingBulk.set(Number(chatId), { type, category, country });
@@ -624,7 +660,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           name: parsed.name,
           type: pending.type,
           category: pending.category,
-          country: pending.country,
+          country: this.normalizeCountry(pending.country),
           content: parsed.content,
         });
         added.push(parsed.name);
@@ -692,27 +728,38 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    await this.saveConfig(String(chatId), pending, content);
+  }
+
+  private async saveConfig(
+    chatId: string,
+    meta: PendingAdd,
+    content: string,
+  ): Promise<void> {
     try {
       const saved = await this.configsService.create({
-        name: pending.name,
-        type: pending.type,
-        category: pending.category,
-        country: pending.country,
+        name: meta.name,
+        type: meta.type,
+        category: meta.category,
+        country: this.normalizeCountry(meta.country),
         content,
       });
 
       await this.send(
-        String(chatId),
+        chatId,
         [
           '✅ <b>Config added</b>',
           `Name: <b>${this.esc(saved.name)}</b>`,
           `ID: <code>${saved.id}</code>`,
           `Type: ${saved.type} · ${saved.category}`,
-        ].join('\n'),
+          saved.country ? `Country: ${saved.country}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
       );
     } catch (err) {
       await this.send(
-        String(chatId),
+        chatId,
         `❌ Failed to add config: ${this.esc(err.message ?? 'Unknown error')}`,
       );
     }
@@ -826,6 +873,27 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     )
       ? (normalized as V2RayConfigCategory)
       : null;
+  }
+
+  /** ISO 3166-1 alpha-2 — DB column is varchar(2) */
+  private isValidCountryCode(value: string): boolean {
+    return /^[a-zA-Z]{2}$/.test(value.trim());
+  }
+
+  private normalizeCountry(value?: string): string | undefined {
+    if (!value) return undefined;
+    const trimmed = value.trim().toLowerCase();
+    return /^[a-z]{2}$/.test(trimmed) ? trimmed : undefined;
+  }
+
+  private looksLikeConfigContent(value: string): boolean {
+    const v = value.trim();
+    if (!v) return false;
+    if (v.includes('://')) return true;
+    if (v.startsWith('{')) return true;
+    if (v.startsWith('remote ')) return true;
+    if (v.startsWith('ssh://')) return true;
+    return false;
   }
 
   private truncate(value: string, max: number): string {
