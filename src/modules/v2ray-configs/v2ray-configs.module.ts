@@ -11,5 +11,6 @@ import { DeviceSession } from '../handshake/entities/device-session.entity';
   imports: [TypeOrmModule.forFeature([V2RayConfig, DeviceSession]), HandshakeModule],
   controllers: [V2RayConfigsController, V2RayConfController],
   providers: [V2RayConfigsService],
+  exports: [V2RayConfigsService],
 })
 export class V2RayConfigsModule {}
