@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SettingsService } from './settings.service';
 import { SettingsController } from './settings.controller';
+import { MobileAppVersionController } from './mobile-app-version.controller';
 import { TimerService } from './timer.service';
 import { TimerController } from './timer.controller';
 import { Setting } from './entities/setting.entity';
@@ -11,7 +12,7 @@ import { TimerStatus } from './entities/timer-status.entity';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Setting, TimerConfiguration, TimerEvent, TimerStatus])],
-  controllers: [SettingsController, TimerController],
+  controllers: [SettingsController, TimerController, MobileAppVersionController],
   providers: [SettingsService, TimerService],
   exports: [SettingsService, TimerService],
 })

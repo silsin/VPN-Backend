@@ -131,6 +131,45 @@ CREATE TABLE IF NOT EXISTS ad_settings (
   description VARCHAR(255)
 );
 
+DO $$ BEGIN
+  CREATE TYPE ad_failure_reason AS ENUM (
+    'no_fill',
+    'network',
+    'blocked',
+    'timeout',
+    'sdk_error',
+    'not_configured',
+    'other'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS ad_failure_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "deviceId" VARCHAR(255) NOT NULL,
+  platform VARCHAR(50) NOT NULL,
+  placement VARCHAR(100),
+  "adType" VARCHAR(50),
+  "adId" UUID,
+  "adUnitId" VARCHAR(255),
+  reason ad_failure_reason NOT NULL DEFAULT 'other',
+  "reasonDetail" TEXT,
+  "errorCode" VARCHAR(100),
+  "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_failure_reports_created_at
+  ON ad_failure_reports ("createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ad_failure_reports_reason
+  ON ad_failure_reports (reason);
+
+CREATE INDEX IF NOT EXISTS idx_ad_failure_reports_platform
+  ON ad_failure_reports (platform);
+
+CREATE INDEX IF NOT EXISTS idx_ad_failure_reports_device_id
+  ON ad_failure_reports ("deviceId");
+
 CREATE TABLE IF NOT EXISTS settings (
   "key" VARCHAR(255) NOT NULL PRIMARY KEY,
   "value" TEXT NOT NULL,
@@ -336,6 +375,22 @@ INSERT INTO settings ("key", "value", "category", "description")
 VALUES ('MaxVPNUsage', '10', 'general', 'Maximum VPN usage limit')
 ON CONFLICT ("key") DO NOTHING;
 
+INSERT INTO settings ("key", "value", "category", "description")
+VALUES
+  ('androidVersion', '"1.0.0"', 'app_version', 'Latest Android version name (e.g. 1.0.0)'),
+  ('androidBuild', '1', 'app_version', 'Latest Android build number (integer)'),
+  ('androidForceUpdate', 'false', 'app_version', 'Force update when client build is older'),
+  ('androidOptionalUpdate', 'true', 'app_version', 'Show optional update dialog when client build is older'),
+  ('androidStoreUrl', '""', 'app_version', 'Android store / download URL'),
+  ('androidMessage', '"A new version is available."', 'app_version', 'Upgrade dialog message for Android'),
+  ('iosVersion', '"1.0.0"', 'app_version', 'Latest iOS version name (e.g. 1.0.0)'),
+  ('iosBuild', '1', 'app_version', 'Latest iOS build number (integer)'),
+  ('iosForceUpdate', 'false', 'app_version', 'Force update when client build is older'),
+  ('iosOptionalUpdate', 'true', 'app_version', 'Show optional update dialog when client build is older'),
+  ('iosStoreUrl', '""', 'app_version', 'iOS App Store / download URL'),
+  ('iosMessage', '"A new version is available."', 'app_version', 'Upgrade dialog message for iOS')
+ON CONFLICT ("key") DO NOTHING;
+
 INSERT INTO ad_settings (key, value, description)
 VALUES
   ('main_page_banner_enabled', 'true', 'Enable banner on main page'),
@@ -405,7 +460,9 @@ INSERT INTO "__migrations_history" (name) VALUES
   ('009_update_ad_enums.sql'),
   ('010_add_protocols_to_v2ray_config_type.sql'),
   ('011_ensure_protocols_enum.sql'),
-  ('012_create_timer_tables.sql')
+  ('012_create_timer_tables.sql'),
+  ('013_add_app_version_settings.sql'),
+  ('014_create_ad_failure_reports_table.sql')
 ON CONFLICT (name) DO NOTHING;
 
 -- -----------------------------------------------------------------------------

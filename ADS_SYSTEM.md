@@ -102,11 +102,33 @@ The system also supports global settings for ads configuration (e.g., global swi
     }
     ```
 
+## 3. Ad failure reports (ads not showing)
+
+Mobile clients report when an ad fails to display.
+
+#### Mobile submit (public, no JWT)
+-   **URL:** `/mobile/ads/failure-report`
+-   **Method:** `POST`
+-   **Body:** `deviceId`, `platform`, `reason` (required); optional `placement`, `adType`, `adId`, `adUnitId`, `reasonDetail`, `errorCode`
+-   **Reasons:** `no_fill`, `network`, `blocked`, `timeout`, `sdk_error`, `not_configured`, `other`
+
+#### Admin list / summary (JWT)
+-   `GET /ads/failure-reports?page=&limit=&platform=&reason=`
+-   `GET /ads/failure-reports/summary?days=7`
+
+#### Telegram bot
+-   `/adsreports [page]`
+-   `/adssummary [days]`
+
+Full mobile guide: `MOBILE_APP_VERSION_ADS_DIALOGS.md`
+
 ## Code References
 
 -   **Controller:** `src/modules/ads/ads.controller.ts`
+-   **Mobile controller:** `src/modules/ads/mobile-ads.controller.ts`
 -   **Service:** `src/modules/ads/ads.service.ts`
 -   **Entities:**
     -   `src/modules/ads/entities/ad.entity.ts`
     -   `src/modules/ads/entities/ad-setting.entity.ts`
+    -   `src/modules/ads/entities/ad-failure-report.entity.ts`
 -   **DTOs:** `src/modules/ads/dto/`

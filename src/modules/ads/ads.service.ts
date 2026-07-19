@@ -3,8 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Ad, AdType } from './entities/ad.entity';
 import { AdSetting } from './entities/ad-setting.entity';
+import {
+  AdFailureReason,
+  AdFailureReport,
+} from './entities/ad-failure-report.entity';
 import { CreateAdDto } from './dto/create-ad.dto';
 import { UpdateAdSettingDto } from './dto/update-ad-setting.dto';
+import { CreateAdFailureReportDto } from './dto/create-ad-failure-report.dto';
 
 @Injectable()
 export class AdsService {
@@ -13,6 +18,8 @@ export class AdsService {
     private adsRepository: Repository<Ad>,
     @InjectRepository(AdSetting)
     private adSettingsRepository: Repository<AdSetting>,
+    @InjectRepository(AdFailureReport)
+    private adFailureReportsRepository: Repository<AdFailureReport>,
   ) {}
 
   // --- Ads CRUD ---
@@ -80,5 +87,86 @@ export class AdsService {
     }
 
     return this.adSettingsRepository.save(setting);
+  }
+
+  // --- Ad failure reports ---
+
+  async createFailureReport(
+    dto: CreateAdFailureReportDto,
+  ): Promise<AdFailureReport> {
+    const report = this.adFailureReportsRepository.create({
+      ...dto,
+      platform: dto.platform.toLowerCase(),
+    });
+    return this.adFailureReportsRepository.save(report);
+  }
+
+  async findFailureReports(options?: {
+    page?: number;
+    limit?: number;
+    platform?: string;
+    reason?: AdFailureReason;
+  }): Promise<{
+    data: AdFailureReport[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, options?.page ?? 1);
+    const limit = Math.min(100, Math.max(1, options?.limit ?? 20));
+    const where: Record<string, any> = {};
+
+    if (options?.platform) {
+      where.platform = options.platform.toLowerCase();
+    }
+    if (options?.reason) {
+      where.reason = options.reason;
+    }
+
+    const [data, total] = await this.adFailureReportsRepository.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
+  async getFailureReportSummary(days = 7): Promise<{
+    total: number;
+    days: number;
+    byReason: Record<string, number>;
+    byPlatform: Record<string, number>;
+  }> {
+    const since = new Date();
+    since.setDate(since.getDate() - Math.max(1, days));
+
+    const reports = await this.adFailureReportsRepository
+      .createQueryBuilder('r')
+      .where('r.createdAt >= :since', { since })
+      .getMany();
+
+    const byReason: Record<string, number> = {};
+    const byPlatform: Record<string, number> = {};
+
+    for (const r of reports) {
+      byReason[r.reason] = (byReason[r.reason] || 0) + 1;
+      byPlatform[r.platform] = (byPlatform[r.platform] || 0) + 1;
+    }
+
+    return {
+      total: reports.length,
+      days,
+      byReason,
+      byPlatform,
+    };
   }
 }

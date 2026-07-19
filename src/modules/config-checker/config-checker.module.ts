@@ -5,6 +5,7 @@ import { V2RayConfigsModule } from '../v2ray-configs/v2ray-configs.module';
 import { DialogsModule } from '../dialogs/dialogs.module';
 import { DeviceLoginsModule } from '../device-logins/device-logins.module';
 import { UsersModule } from '../users/users.module';
+import { AdsModule } from '../ads/ads.module';
 import { ConfigCheckerService } from './config-checker.service';
 import { ConfigCheckerController } from './config-checker.controller';
 import { TelegramReportService } from './telegram-report.service';
@@ -17,6 +18,7 @@ import { TelegramAdminBotService } from './telegram-admin-bot.service';
     DialogsModule,
     DeviceLoginsModule,
     UsersModule,
+    AdsModule,
   ],
   providers: [ConfigCheckerService, TelegramReportService, TelegramAdminBotService],
   controllers: [ConfigCheckerController],

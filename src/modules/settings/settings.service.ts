@@ -1,7 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from './entities/setting.entity';
+
+export type AppUpdateType = 'force' | 'optional' | 'none';
+
+export interface MobileAppVersionResponse {
+  platform: 'android' | 'ios';
+  latestVersion: string;
+  latestBuild: number;
+  forceUpdate: boolean;
+  optionalUpdate: boolean;
+  storeUrl: string;
+  message: string;
+  clientBuild?: number;
+  clientVersion?: string;
+  updateRequired: boolean;
+  updateType: AppUpdateType;
+}
 
 @Injectable()
 export class SettingsService {
@@ -12,23 +28,15 @@ export class SettingsService {
 
   async findAll(): Promise<Record<string, any>> {
     const settings = await this.settingsRepository.find();
-    
-    // Transform flat list of settings into nested object based on categories or keys
-    // Strategy: We will assume the frontend sends a structured object.
-    // However, to map to the DB "key-value" structure efficiently:
-    // We can store specific keys like 'server.forceServerSelection'
-    
-    // But the requirement asks for a response structure:
-    // { "server": { "forceServerSelection": true, ... } }
-    
+
     const response: Record<string, any> = {
-        general: {},
-        notifications: {},
-        server: {}
+      general: {},
+      notifications: {},
+      server: {},
+      app_version: {},
     };
 
-    settings.forEach(setting => {
-      // Try to parse value as JSON if possible, else string
+    settings.forEach((setting) => {
       let parsedValue;
       try {
         parsedValue = JSON.parse(setting.value);
@@ -36,16 +44,6 @@ export class SettingsService {
         parsedValue = setting.value;
       }
 
-      // If key contains dot notation (e.g. server.forceServerSelection), nest it
-      // OR we can rely on 'category' column.
-      
-      // Let's rely on keys being "category.subKey" or just construct from category.
-      // Requirement: 
-      // Category: server, Key: forceServerSelection
-      
-      // Implementation: We expect keys in DB to be unique. 
-      // Let's use the 'category' field to group them in the response.
-      
       if (!response[setting.category]) {
         response[setting.category] = {};
       }
@@ -56,30 +54,79 @@ export class SettingsService {
   }
 
   async update(settings: Record<string, any>): Promise<any> {
-    // Expecting object like: { server: { forceServerSelection: true } }
-    
     for (const [category, groupSettings] of Object.entries(settings)) {
       if (typeof groupSettings === 'object' && groupSettings !== null) {
         for (const [key, value] of Object.entries(groupSettings)) {
-           // Save each key. value needs to be stringified.
-           const stringValue = JSON.stringify(value);
-           
-           // Upsert
-           let setting = await this.settingsRepository.findOne({ where: { key } });
-           if (!setting) {
-             setting = this.settingsRepository.create({ 
-               key, 
-               value: stringValue,
-               category
-             });
-           } else {
-             setting.value = stringValue;
-             setting.category = category; // update category just in case
-           }
-           await this.settingsRepository.save(setting);
+          const stringValue = JSON.stringify(value);
+
+          let setting = await this.settingsRepository.findOne({ where: { key } });
+          if (!setting) {
+            setting = this.settingsRepository.create({
+              key,
+              value: stringValue,
+              category,
+            });
+          } else {
+            setting.value = stringValue;
+            setting.category = category;
+          }
+          await this.settingsRepository.save(setting);
         }
       }
     }
     return this.findAll();
+  }
+
+  async getAppVersionForMobile(
+    platformRaw: string,
+    clientBuild?: number,
+    clientVersion?: string,
+  ): Promise<MobileAppVersionResponse> {
+    const platform = (platformRaw || '').toLowerCase();
+    if (platform !== 'android' && platform !== 'ios') {
+      throw new BadRequestException('platform must be android or ios');
+    }
+
+    const all = await this.findAll();
+    const cfg = all.app_version || {};
+    const prefix = platform === 'android' ? 'android' : 'ios';
+
+    const latestVersion = String(cfg[`${prefix}Version`] ?? '1.0.0');
+    const latestBuild = Number(cfg[`${prefix}Build`] ?? 1) || 1;
+    const forceUpdate = Boolean(cfg[`${prefix}ForceUpdate`]);
+    const optionalUpdate = Boolean(cfg[`${prefix}OptionalUpdate`]);
+    const storeUrl = String(cfg[`${prefix}StoreUrl`] ?? '');
+    const message = String(
+      cfg[`${prefix}Message`] ?? 'A new version is available.',
+    );
+
+    let updateType: AppUpdateType = 'none';
+    let updateRequired = false;
+
+    if (clientBuild !== undefined && Number.isFinite(clientBuild)) {
+      if (clientBuild < latestBuild) {
+        if (forceUpdate) {
+          updateType = 'force';
+          updateRequired = true;
+        } else if (optionalUpdate) {
+          updateType = 'optional';
+          updateRequired = true;
+        }
+      }
+    }
+
+    return {
+      platform,
+      latestVersion,
+      latestBuild,
+      forceUpdate,
+      optionalUpdate,
+      storeUrl,
+      message,
+      ...(clientBuild !== undefined ? { clientBuild } : {}),
+      ...(clientVersion ? { clientVersion } : {}),
+      updateRequired,
+      updateType,
+    };
   }
 }

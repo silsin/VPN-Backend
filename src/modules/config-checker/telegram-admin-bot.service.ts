@@ -21,6 +21,8 @@ import {
 } from '../dialogs/entities/dialog.entity';
 import { DeviceLoginsService } from '../device-logins/device-logins.service';
 import { UsersService } from '../users/users.service';
+import { AdsService } from '../ads/ads.service';
+import { AdFailureReport } from '../ads/entities/ad-failure-report.entity';
 
 interface TelegramUser {
   id: number;
@@ -66,12 +68,22 @@ interface PendingBulk {
   country?: string;
 }
 
+interface PendingDialogButton {
+  label: string;
+  actionUrl?: string;
+  action?: string;
+  style?: string;
+}
+
 interface PendingDialogAdd {
-  step: 'title' | 'message';
+  step: 'title' | 'message' | 'actionUrl' | 'buttons';
   type: DialogType;
   target: DialogTarget;
   priority: string;
   title?: string;
+  message?: string;
+  actionUrl?: string;
+  buttons?: PendingDialogButton[];
 }
 
 @Injectable()
@@ -88,6 +100,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private readonly pendingDialogAdds = new Map<number, PendingDialogAdd>();
   private readonly LIST_PAGE_SIZE = 5;
   private readonly DIALOG_PAGE_SIZE = 5;
+  private readonly ADS_REPORT_PAGE_SIZE = 5;
 
   constructor(
     private readonly configService: ConfigService,
@@ -96,6 +109,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     private readonly dialogsService: DialogsService,
     private readonly deviceLoginsService: DeviceLoginsService,
     private readonly usersService: UsersService,
+    private readonly adsService: AdsService,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
@@ -272,6 +286,18 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       case '/report':
         await this.sendCombinedReport(chatId);
         break;
+      case '/adsreports':
+        await this.listAdFailureReports(
+          chatId,
+          parseInt(args[0] ?? '1', 10) || 1,
+        );
+        break;
+      case '/adssummary':
+        await this.sendAdFailureSummary(
+          chatId,
+          parseInt(args[0] ?? '7', 10) || 7,
+        );
+        break;
       default:
         await this.send(chatId, 'Unknown command. Send /help for the command list.');
     }
@@ -338,6 +364,14 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           await this.answerCallback(query.id, 'Cancelled');
           await this.listDialogs(chatId, 1, messageId);
           break;
+        case 'adsr':
+          await this.answerCallback(query.id);
+          await this.listAdFailureReports(
+            chatId,
+            parseInt(payload, 10) || 1,
+            messageId,
+          );
+          break;
         default:
           await this.answerCallback(query.id, 'Unknown action');
       }
@@ -378,10 +412,14 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '<b>Dialogs</b>',
         '/dialogs [page] — list with enable/disable/delete',
         '/dialogadd &lt;type&gt; &lt;target&gt; [priority]',
-        '  then send title, then message',
+        '  then: title → message → link → buttons',
         '/dialogenable &lt;uuid&gt; — show on mobile (sent)',
         '/dialogdisable &lt;uuid&gt; — hide (cancelled)',
         '/dialogdel &lt;uuid&gt; — delete dialog',
+        '',
+        '<b>Ads reports</b>',
+        '/adsreports [page] — recent ad-not-showing reports',
+        '/adssummary [days] — failure counts by reason (default 7)',
         '',
         '<b>Reports</b>',
         '/sessions — login sessions summary',
@@ -398,6 +436,8 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '<b>Examples</b>',
         '<code>/add Iran-1 v2ray_link main ir</code>',
         '<code>/dialogadd in-app all high</code>',
+        '<code>/adsreports</code>',
+        '<code>/adssummary 7</code>',
       ].join('\n'),
     );
   }
@@ -1044,10 +1084,11 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           'Example:',
           '<code>/dialogadd in-app all high</code>',
           '',
-          'Then send the <b>title</b>, then the <b>message</b>.',
+          'Then send: <b>title</b> → <b>message</b> → <b>link</b> → <b>buttons</b>',
           '',
           'Types: in-app, push, both',
           'Targets: all, android, ios',
+          'For link/buttons steps send <code>-</code> to skip.',
         ].join('\n'),
       );
       return;
@@ -1118,12 +1159,77 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.pendingDialogAdds.delete(chatId);
-
-    if (!text) {
-      await this.send(String(chatId), '❌ Message cannot be empty.');
+    if (pending.step === 'message') {
+      if (!text) {
+        await this.send(String(chatId), '❌ Message cannot be empty.');
+        return;
+      }
+      pending.message = text;
+      pending.step = 'actionUrl';
+      this.pendingDialogAdds.set(chatId, pending);
+      await this.send(
+        String(chatId),
+        [
+          '🔗 <b>Step 4 — dialog action link (optional)</b>',
+          'Send a full URL, or <code>-</code> to skip.',
+          '',
+          'Example: <code>https://play.google.com/store/apps/details?id=...</code>',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
       return;
     }
+
+    if (pending.step === 'actionUrl') {
+      const trimmed = text.trim();
+      if (trimmed !== '-' && trimmed.toLowerCase() !== 'skip') {
+        if (!/^https?:\/\/\S+$/i.test(trimmed)) {
+          await this.send(
+            String(chatId),
+            '❌ Invalid URL. Send a full http(s) link, or <code>-</code> to skip.',
+          );
+          return;
+        }
+        pending.actionUrl = trimmed;
+      }
+      pending.step = 'buttons';
+      this.pendingDialogAdds.set(chatId, pending);
+      await this.send(
+        String(chatId),
+        [
+          '🔘 <b>Step 5 — buttons (optional)</b>',
+          'One button per line:',
+          '<code>Label|https://example.com|primary</code>',
+          '<code>Label|dismiss|secondary</code>',
+          '',
+          'Styles: primary, secondary, danger, success',
+          'Send <code>-</code> to skip buttons and create the dialog.',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    // step === 'buttons'
+    const trimmed = text.trim();
+    if (trimmed !== '-' && trimmed.toLowerCase() !== 'skip') {
+      const buttons = this.parseDialogButtons(trimmed);
+      if (!buttons) {
+        await this.send(
+          String(chatId),
+          [
+            '❌ Invalid button format. Use one per line:',
+            '<code>Label|https://url|primary</code>',
+            'or <code>Label|dismiss|secondary</code>',
+            'or send <code>-</code> to skip.',
+          ].join('\n'),
+        );
+        return;
+      }
+      pending.buttons = buttons;
+    }
+
+    this.pendingDialogAdds.delete(chatId);
 
     try {
       const saved = await this.dialogsService.create({
@@ -1131,9 +1237,12 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         target: pending.target,
         priority: pending.priority,
         title: pending.title!,
-        message: text,
+        message: pending.message!,
+        ...(pending.actionUrl ? { actionUrl: pending.actionUrl } : {}),
+        ...(pending.buttons?.length ? { buttons: pending.buttons } : {}),
       });
 
+      const buttonCount = saved.buttons?.length ?? 0;
       await this.send(
         String(chatId),
         [
@@ -1141,6 +1250,10 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           `Title: <b>${this.esc(saved.title)}</b>`,
           `ID: <code>${saved.id}</code>`,
           `${saved.type} · ${saved.target} · ${saved.status}`,
+          saved.actionUrl
+            ? `Link: ${this.esc(saved.actionUrl)}`
+            : 'Link: (none)',
+          `Buttons: ${buttonCount}`,
           '',
           'Enable it with /dialogenable or the ✅ button in /dialogs',
         ].join('\n'),
@@ -1151,6 +1264,130 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         `❌ Failed to create dialog: ${this.esc(err.message ?? 'Unknown error')}`,
       );
     }
+  }
+
+  private parseDialogButtons(text: string): PendingDialogButton[] | null {
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return null;
+
+    const buttons: PendingDialogButton[] = [];
+    const styles = new Set(['primary', 'secondary', 'danger', 'success']);
+
+    for (const line of lines) {
+      const parts = line.split('|').map((p) => p.trim());
+      if (parts.length < 2 || !parts[0]) return null;
+
+      const [label, target, styleRaw] = parts;
+      const style =
+        styleRaw && styles.has(styleRaw.toLowerCase())
+          ? styleRaw.toLowerCase()
+          : undefined;
+
+      if (/^https?:\/\//i.test(target)) {
+        buttons.push({ label, actionUrl: target, ...(style ? { style } : {}) });
+      } else if (target) {
+        buttons.push({ label, action: target, ...(style ? { style } : {}) });
+      } else {
+        return null;
+      }
+    }
+
+    return buttons;
+  }
+
+  private async listAdFailureReports(
+    chatId: string,
+    page: number,
+    editMessageId?: number,
+  ): Promise<void> {
+    const result = await this.adsService.findFailureReports({
+      page: Math.max(1, page),
+      limit: this.ADS_REPORT_PAGE_SIZE,
+    });
+
+    if (result.total === 0) {
+      const empty = '📭 No ad failure reports yet.';
+      if (editMessageId) {
+        await this.editMessage(chatId, editMessageId, empty);
+      } else {
+        await this.send(chatId, empty);
+      }
+      return;
+    }
+
+    const safePage = Math.min(Math.max(page, 1), result.totalPages);
+    const pageResult =
+      safePage === result.page
+        ? result
+        : await this.adsService.findFailureReports({
+            page: safePage,
+            limit: this.ADS_REPORT_PAGE_SIZE,
+          });
+
+    const lines = pageResult.data.map(
+      (r: AdFailureReport, i: number) =>
+        `${(safePage - 1) * this.ADS_REPORT_PAGE_SIZE + i + 1}. ` +
+        `<b>${this.esc(r.reason)}</b> · ${this.esc(r.platform)}` +
+        (r.placement ? ` · ${this.esc(r.placement)}` : '') +
+        `\n   device: <code>${this.esc(r.deviceId)}</code>` +
+        (r.errorCode ? `\n   code: <code>${this.esc(r.errorCode)}</code>` : '') +
+        (r.reasonDetail
+          ? `\n   ${this.esc(this.truncate(r.reasonDetail, 80))}`
+          : '') +
+        `\n   ${r.createdAt ? new Date(r.createdAt).toISOString() : ''}`,
+    );
+
+    const text = [
+      `📣 <b>Ad failure reports</b> (page ${safePage}/${result.totalPages}, total ${result.total})`,
+      '',
+      ...lines,
+    ].join('\n');
+
+    const nav: InlineKeyboardButton[] = [];
+    if (safePage > 1) {
+      nav.push({ text: '⬅️ Prev', callback_data: `adsr:${safePage - 1}` });
+    }
+    if (safePage < result.totalPages) {
+      nav.push({ text: 'Next ➡️', callback_data: `adsr:${safePage + 1}` });
+    }
+
+    const keyboard = nav.length ? [nav] : undefined;
+
+    if (editMessageId) {
+      await this.editMessage(chatId, editMessageId, text, keyboard);
+    } else {
+      await this.send(chatId, text, keyboard);
+    }
+  }
+
+  private async sendAdFailureSummary(
+    chatId: string,
+    days: number,
+  ): Promise<void> {
+    const summary = await this.adsService.getFailureReportSummary(days);
+    const reasonLines = Object.entries(summary.byReason)
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, count]) => `• <code>${this.esc(reason)}</code>: ${count}`);
+    const platformLines = Object.entries(summary.byPlatform)
+      .sort((a, b) => b[1] - a[1])
+      .map(([p, count]) => `• <code>${this.esc(p)}</code>: ${count}`);
+
+    await this.send(
+      chatId,
+      [
+        `📊 <b>Ad failure summary</b> (last ${summary.days} days)`,
+        `Total: <b>${summary.total}</b>`,
+        '',
+        '<b>By reason</b>',
+        reasonLines.length ? reasonLines.join('\n') : '• none',
+        '',
+        '<b>By platform</b>',
+        platformLines.length ? platformLines.join('\n') : '• none',
+      ].join('\n'),
+    );
   }
 
   private async setDialogEnabled(

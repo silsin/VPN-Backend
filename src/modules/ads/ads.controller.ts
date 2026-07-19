@@ -6,13 +6,15 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AdsService } from './ads.service';
 import { CreateAdDto } from './dto/create-ad.dto';
 import { UpdateAdDto } from './dto/update-ad.dto';
 import { UpdateAdSettingDto } from './dto/update-ad-setting.dto';
+import { AdFailureReason } from './entities/ad-failure-report.entity';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Ads')
@@ -44,6 +46,35 @@ export class AdsController {
   @ApiOperation({ summary: 'Update an ad setting' })
   updateSetting(@Body() updateAdSettingDto: UpdateAdSettingDto) {
     return this.adsService.updateSetting(updateAdSettingDto);
+  }
+
+  @Get('failure-reports/summary')
+  @ApiOperation({ summary: 'Ad failure report summary (last N days)' })
+  @ApiQuery({ name: 'days', required: false, type: Number })
+  getFailureReportSummary(@Query('days') days?: string) {
+    return this.adsService.getFailureReportSummary(
+      days ? parseInt(days, 10) : 7,
+    );
+  }
+
+  @Get('failure-reports')
+  @ApiOperation({ summary: 'List ad failure reports from mobile clients' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'platform', required: false, enum: ['android', 'ios'] })
+  @ApiQuery({ name: 'reason', required: false, enum: AdFailureReason })
+  findFailureReports(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('platform') platform?: string,
+    @Query('reason') reason?: AdFailureReason,
+  ) {
+    return this.adsService.findFailureReports({
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      platform,
+      reason,
+    });
   }
 
   @Get()
