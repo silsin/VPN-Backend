@@ -299,6 +299,66 @@ export class DialogsService {
   }
 
   /**
+   * Enable a dialog so it appears on mobile (status → sent).
+   * Draft/scheduled: send immediately. Cancelled: reactivate as sent.
+   */
+  async enableDialog(id: string): Promise<Dialog> {
+    const dialog = await this.findOne(id);
+
+    if (dialog.status === DialogStatus.SENT) {
+      return dialog;
+    }
+
+    if (
+      dialog.status === DialogStatus.DRAFT ||
+      dialog.status === DialogStatus.SCHEDULED
+    ) {
+      return this.sendDialog(id);
+    }
+
+    // Cancelled → reactivate for in-app visibility
+    dialog.status = DialogStatus.SENT;
+    dialog.sentTime = dialog.sentTime ?? new Date();
+    const enabled = await this.dialogRepository.save(dialog);
+    this.logger.log(`Enabled dialog ${id}`);
+    return enabled;
+  }
+
+  /**
+   * Disable a dialog so mobile clients stop showing it (status → cancelled).
+   */
+  async disableDialog(id: string): Promise<Dialog> {
+    const dialog = await this.findOne(id);
+
+    if (dialog.status === DialogStatus.CANCELLED) {
+      return dialog;
+    }
+
+    if (dialog.status === DialogStatus.SCHEDULED) {
+      await this.schedulerService.cancelScheduledDialog(id);
+    }
+
+    dialog.status = DialogStatus.CANCELLED;
+    const disabled = await this.dialogRepository.save(dialog);
+    this.logger.log(`Disabled dialog ${id}`);
+    return disabled;
+  }
+
+  /**
+   * Force-delete a dialog regardless of status (admin / Telegram use).
+   */
+  async forceRemove(id: string): Promise<void> {
+    const dialog = await this.findOne(id);
+
+    if (dialog.status === DialogStatus.SCHEDULED) {
+      await this.schedulerService.cancelScheduledDialog(id);
+    }
+
+    await this.dialogRepository.remove(dialog);
+    this.logger.log(`Force-deleted dialog ${id}`);
+  }
+
+  /**
    * Get analytics for a dialog
    */
   async getAnalytics(id: string): Promise<{

@@ -12,6 +12,15 @@ import {
 } from '../v2ray-configs/entities/v2ray-config.entity';
 import { V2RayConfigsService } from '../v2ray-configs/v2ray-configs.service';
 import { ConfigCheckerService } from './config-checker.service';
+import { DialogsService } from '../dialogs/dialogs.service';
+import {
+  Dialog,
+  DialogStatus,
+  DialogTarget,
+  DialogType,
+} from '../dialogs/entities/dialog.entity';
+import { DeviceLoginsService } from '../device-logins/device-logins.service';
+import { UsersService } from '../users/users.service';
 
 interface TelegramUser {
   id: number;
@@ -57,6 +66,14 @@ interface PendingBulk {
   country?: string;
 }
 
+interface PendingDialogAdd {
+  step: 'title' | 'message';
+  type: DialogType;
+  target: DialogTarget;
+  priority: string;
+  title?: string;
+}
+
 @Injectable()
 export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramAdminBotService.name);
@@ -68,12 +85,17 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly pendingAdds = new Map<number, PendingAdd>();
   private readonly pendingBulk = new Map<number, PendingBulk>();
+  private readonly pendingDialogAdds = new Map<number, PendingDialogAdd>();
   private readonly LIST_PAGE_SIZE = 5;
+  private readonly DIALOG_PAGE_SIZE = 5;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly configsService: V2RayConfigsService,
     private readonly checkerService: ConfigCheckerService,
+    private readonly dialogsService: DialogsService,
+    private readonly deviceLoginsService: DeviceLoginsService,
+    private readonly usersService: UsersService,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
@@ -176,6 +198,11 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (this.pendingDialogAdds.has(message.chat.id) && !text.startsWith('/')) {
+      await this.continueDialogAdd(message.chat.id, text);
+      return;
+    }
+
     if (this.pendingBulk.has(message.chat.id) && !text.startsWith('/')) {
       await this.completeBulkAdd(message.chat.id, text);
       return;
@@ -220,6 +247,30 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         break;
       case '/check':
         await this.runCheck(chatId, args[0]);
+        break;
+      case '/dialogs':
+        await this.listDialogs(chatId, parseInt(args[0] ?? '1', 10) || 1);
+        break;
+      case '/dialogadd':
+        await this.startDialogAdd(chatId, args);
+        break;
+      case '/dialogdel':
+        await this.deleteDialog(chatId, args[0]);
+        break;
+      case '/dialogenable':
+        await this.setDialogEnabled(chatId, args[0], true);
+        break;
+      case '/dialogdisable':
+        await this.setDialogEnabled(chatId, args[0], false);
+        break;
+      case '/sessions':
+        await this.sendSessionsReport(chatId);
+        break;
+      case '/users':
+        await this.sendUsersReport(chatId);
+        break;
+      case '/report':
+        await this.sendCombinedReport(chatId);
         break;
       default:
         await this.send(chatId, 'Unknown command. Send /help for the command list.');
@@ -266,6 +317,27 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           await this.answerCallback(query.id, 'Checking…');
           await this.runCheck(chatId, payload);
           break;
+        case 'dlg':
+          await this.answerCallback(query.id);
+          await this.listDialogs(chatId, parseInt(payload, 10) || 1, messageId);
+          break;
+        case 'dlgen':
+          await this.toggleDialogFromButton(chatId, messageId, payload, true, query.id);
+          break;
+        case 'dlgdis':
+          await this.toggleDialogFromButton(chatId, messageId, payload, false, query.id);
+          break;
+        case 'dlgask':
+          await this.answerCallback(query.id);
+          await this.showDialogDeleteConfirm(chatId, messageId, payload);
+          break;
+        case 'dlgyes':
+          await this.deleteDialogById(chatId, messageId, payload, query.id);
+          break;
+        case 'dlgno':
+          await this.answerCallback(query.id, 'Cancelled');
+          await this.listDialogs(chatId, 1, messageId);
+          break;
         default:
           await this.answerCallback(query.id, 'Unknown action');
       }
@@ -277,6 +349,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private clearPending(chatId: number): void {
     this.pendingAdds.delete(chatId);
     this.pendingBulk.delete(chatId);
+    this.pendingDialogAdds.delete(chatId);
   }
 
   private isAuthorized(userId: string): boolean {
@@ -291,34 +364,40 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     await this.send(
       chatId,
       [
-        '🤖 <b>FlyVPN Config Admin Bot</b>',
+        '🤖 <b>FlyVPN Admin Bot</b>',
         '',
-        '<b>Commands</b>',
-        '/list [page] — list configs with inline buttons',
-        '/stats — config counts by type/category',
+        '<b>VPN Configs</b>',
+        '/list [page] — list configs with buttons',
+        '/stats — config counts',
         '/add &lt;name&gt; &lt;type&gt; &lt;category&gt; [country]',
-        '  country = 2-letter code only (e.g. ir) — optional',
-        '  then send config content on the next message',
+        '  country = 2-letter code only (e.g. ir)',
         '/bulkadd &lt;type&gt; &lt;category&gt; [country]',
-        '  then paste multiple lines (see below)',
-        '/remove &lt;id-or-name&gt; — delete a config',
-        '/check — run health check on all configs',
-        '/check &lt;uuid&gt; — check one config',
-        '/cancel — cancel pending /add or /bulkadd',
+        '/remove &lt;id-or-name&gt;',
+        '/check [uuid]',
         '',
-        '<b>Types:</b> v2ray_link, json_config, openvpn, sstp, ssh',
+        '<b>Dialogs</b>',
+        '/dialogs [page] — list with enable/disable/delete',
+        '/dialogadd &lt;type&gt; &lt;target&gt; [priority]',
+        '  then send title, then message',
+        '/dialogenable &lt;uuid&gt; — show on mobile (sent)',
+        '/dialogdisable &lt;uuid&gt; — hide (cancelled)',
+        '/dialogdel &lt;uuid&gt; — delete dialog',
+        '',
+        '<b>Reports</b>',
+        '/sessions — login sessions summary',
+        '/users — total users summary',
+        '/report — users + sessions combined',
+        '',
+        '/cancel — cancel pending add',
+        '',
+        '<b>Config types:</b> v2ray_link, json_config, openvpn, sstp, ssh',
         '<b>Categories:</b> splash, main, backup',
+        '<b>Dialog types:</b> in-app, push, both',
+        '<b>Targets:</b> all, android, ios',
         '',
-        '<b>Single add</b>',
+        '<b>Examples</b>',
         '<code>/add Iran-1 v2ray_link main ir</code>',
-        'then paste: <code>vless://...</code>',
-        '',
-        '<b>Bulk add</b> (one line per config)',
-        '<code>/bulkadd v2ray_link main ir</code>',
-        'then paste:',
-        '<code>Server-1|vless://...</code>',
-        '<code>Server-2|vless://...</code>',
-        'Or paste links only — name is taken from #fragment',
+        '<code>/dialogadd in-app all high</code>',
       ].join('\n'),
     );
   }
@@ -484,6 +563,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
 
   private async startAdd(chatId: string, args: string[]): Promise<void> {
     this.pendingBulk.delete(Number(chatId));
+    this.pendingDialogAdds.delete(Number(chatId));
 
     if (args.length < 3) {
       await this.send(
@@ -560,6 +640,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
 
   private async startBulkAdd(chatId: string, args: string[]): Promise<void> {
     this.pendingAdds.delete(Number(chatId));
+    this.pendingDialogAdds.delete(Number(chatId));
 
     if (args.length < 2) {
       await this.send(
@@ -856,8 +937,486 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---------------------------------------------------------------------------
+  // Dialog commands
+  // ---------------------------------------------------------------------------
+
+  private async listDialogs(
+    chatId: string,
+    page: number,
+    editMessageId?: number,
+  ): Promise<void> {
+    const result = await this.dialogsService.findAll({
+      page,
+      limit: this.DIALOG_PAGE_SIZE,
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+    });
+
+    if (result.total === 0) {
+      const text = '📭 No dialogs found. Use /dialogadd to create one.';
+      if (editMessageId) {
+        await this.editMessage(chatId, editMessageId, text);
+      } else {
+        await this.send(chatId, text);
+      }
+      return;
+    }
+
+    const safePage = Math.min(Math.max(page, 1), result.totalPages);
+    const lines = result.data.map(
+      (d, i) =>
+        `${(safePage - 1) * this.DIALOG_PAGE_SIZE + i + 1}. ${this.dialogStatusIcon(d.status)} <b>${this.esc(d.title)}</b>\n` +
+        `   <code>${d.id}</code>\n` +
+        `   ${d.type} · ${d.target} · ${d.status} · ${d.priority}`,
+    );
+
+    const text = [
+      `💬 <b>Dialogs</b> (${result.total} total) — page ${safePage}/${result.totalPages}`,
+      '',
+      ...lines,
+      '',
+      '✅ Enable = show on mobile · ⏸ Disable = hide · 🗑 Delete',
+    ].join('\n');
+
+    const keyboard = this.buildDialogKeyboard(result.data, safePage, result.totalPages);
+
+    if (editMessageId) {
+      await this.editMessage(chatId, editMessageId, text, keyboard);
+    } else {
+      await this.send(chatId, text, keyboard);
+    }
+  }
+
+  private buildDialogKeyboard(
+    dialogs: Dialog[],
+    page: number,
+    totalPages: number,
+  ): InlineKeyboardButton[][] {
+    const rows: InlineKeyboardButton[][] = [];
+
+    for (const dialog of dialogs) {
+      const short = this.truncate(dialog.title, 14);
+      const isEnabled = dialog.status === DialogStatus.SENT;
+      rows.push([
+        isEnabled
+          ? { text: `⏸ ${short}`, callback_data: `dlgdis:${dialog.id}` }
+          : { text: `✅ ${short}`, callback_data: `dlgen:${dialog.id}` },
+        { text: '🗑', callback_data: `dlgask:${dialog.id}` },
+      ]);
+    }
+
+    const nav: InlineKeyboardButton[] = [];
+    if (page > 1) {
+      nav.push({ text: '◀ Prev', callback_data: `dlg:${page - 1}` });
+    }
+    nav.push({ text: `${page}/${totalPages}`, callback_data: `dlg:${page}` });
+    if (page < totalPages) {
+      nav.push({ text: 'Next ▶', callback_data: `dlg:${page + 1}` });
+    }
+    if (nav.length) rows.push(nav);
+
+    return rows;
+  }
+
+  private dialogStatusIcon(status: DialogStatus): string {
+    switch (status) {
+      case DialogStatus.SENT:
+        return '✅';
+      case DialogStatus.SCHEDULED:
+        return '⏰';
+      case DialogStatus.CANCELLED:
+        return '⏸';
+      default:
+        return '📝';
+    }
+  }
+
+  private async startDialogAdd(chatId: string, args: string[]): Promise<void> {
+    this.clearPending(Number(chatId));
+
+    if (args.length < 2) {
+      await this.send(
+        chatId,
+        [
+          'Usage:',
+          '<code>/dialogadd &lt;type&gt; &lt;target&gt; [priority]</code>',
+          '',
+          'Example:',
+          '<code>/dialogadd in-app all high</code>',
+          '',
+          'Then send the <b>title</b>, then the <b>message</b>.',
+          '',
+          'Types: in-app, push, both',
+          'Targets: all, android, ios',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    const [typeRaw, targetRaw, priorityRaw] = args;
+    const type = this.parseDialogType(typeRaw);
+    const target = this.parseDialogTarget(targetRaw);
+    const priority = (priorityRaw || 'normal').slice(0, 50);
+
+    if (!type) {
+      await this.send(
+        chatId,
+        `Invalid type <code>${this.esc(typeRaw)}</code>. Use: in-app, push, both`,
+      );
+      return;
+    }
+    if (!target) {
+      await this.send(
+        chatId,
+        `Invalid target <code>${this.esc(targetRaw)}</code>. Use: all, android, ios`,
+      );
+      return;
+    }
+
+    this.pendingDialogAdds.set(Number(chatId), {
+      step: 'title',
+      type,
+      target,
+      priority,
+    });
+
+    await this.send(
+      chatId,
+      [
+        '✏️ <b>Step 2 — send dialog title</b>',
+        `Type: <code>${type}</code>`,
+        `Target: <code>${target}</code>`,
+        `Priority: <code>${this.esc(priority)}</code>`,
+        '',
+        'Send /cancel to abort.',
+      ].join('\n'),
+    );
+  }
+
+  private async continueDialogAdd(chatId: number, text: string): Promise<void> {
+    const pending = this.pendingDialogAdds.get(chatId);
+    if (!pending) return;
+
+    if (pending.step === 'title') {
+      if (!text || text.length > 255) {
+        await this.send(String(chatId), '❌ Title required (max 255 chars). Try again.');
+        return;
+      }
+      pending.title = text;
+      pending.step = 'message';
+      this.pendingDialogAdds.set(chatId, pending);
+      await this.send(
+        String(chatId),
+        [
+          '✏️ <b>Step 3 — send dialog message</b>',
+          `Title: <b>${this.esc(text)}</b>`,
+          '',
+          'Paste the full message body next.',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    this.pendingDialogAdds.delete(chatId);
+
+    if (!text) {
+      await this.send(String(chatId), '❌ Message cannot be empty.');
+      return;
+    }
+
+    try {
+      const saved = await this.dialogsService.create({
+        type: pending.type,
+        target: pending.target,
+        priority: pending.priority,
+        title: pending.title!,
+        message: text,
+      });
+
+      await this.send(
+        String(chatId),
+        [
+          '✅ <b>Dialog created</b> (draft)',
+          `Title: <b>${this.esc(saved.title)}</b>`,
+          `ID: <code>${saved.id}</code>`,
+          `${saved.type} · ${saved.target} · ${saved.status}`,
+          '',
+          'Enable it with /dialogenable or the ✅ button in /dialogs',
+        ].join('\n'),
+      );
+    } catch (err) {
+      await this.send(
+        String(chatId),
+        `❌ Failed to create dialog: ${this.esc(err.message ?? 'Unknown error')}`,
+      );
+    }
+  }
+
+  private async setDialogEnabled(
+    chatId: string,
+    id: string | undefined,
+    enable: boolean,
+  ): Promise<void> {
+    if (!id) {
+      await this.send(
+        chatId,
+        enable
+          ? 'Usage: <code>/dialogenable &lt;uuid&gt;</code>'
+          : 'Usage: <code>/dialogdisable &lt;uuid&gt;</code>',
+      );
+      return;
+    }
+
+    try {
+      const dialog = enable
+        ? await this.dialogsService.enableDialog(id)
+        : await this.dialogsService.disableDialog(id);
+      await this.send(
+        chatId,
+        [
+          enable ? '✅ <b>Dialog enabled</b>' : '⏸ <b>Dialog disabled</b>',
+          `Title: <b>${this.esc(dialog.title)}</b>`,
+          `Status: <code>${dialog.status}</code>`,
+          `<code>${dialog.id}</code>`,
+        ].join('\n'),
+      );
+    } catch (err) {
+      await this.send(
+        chatId,
+        `❌ ${this.esc(err.message ?? 'Unknown error')}`,
+      );
+    }
+  }
+
+  private async deleteDialog(chatId: string, id?: string): Promise<void> {
+    if (!id) {
+      await this.send(chatId, 'Usage: <code>/dialogdel &lt;uuid&gt;</code>\n\nTip: use /dialogs for delete buttons.');
+      return;
+    }
+
+    try {
+      const dialog = await this.dialogsService.findOne(id);
+      await this.dialogsService.forceRemove(id);
+      await this.send(
+        chatId,
+        `🗑 <b>Deleted</b> ${this.esc(dialog.title)}\n<code>${dialog.id}</code>`,
+      );
+    } catch (err) {
+      await this.send(
+        chatId,
+        `❌ ${this.esc(err.message ?? 'Unknown error')}`,
+      );
+    }
+  }
+
+  private async toggleDialogFromButton(
+    chatId: string,
+    messageId: number,
+    dialogId: string,
+    enable: boolean,
+    callbackQueryId: string,
+  ): Promise<void> {
+    try {
+      const dialog = enable
+        ? await this.dialogsService.enableDialog(dialogId)
+        : await this.dialogsService.disableDialog(dialogId);
+      await this.answerCallback(
+        callbackQueryId,
+        enable ? `Enabled: ${dialog.title}` : `Disabled: ${dialog.title}`,
+      );
+      await this.listDialogs(chatId, 1, messageId);
+    } catch (err) {
+      await this.answerCallback(callbackQueryId, err.message ?? 'Failed', true);
+    }
+  }
+
+  private async showDialogDeleteConfirm(
+    chatId: string,
+    messageId: number,
+    dialogId: string,
+  ): Promise<void> {
+    try {
+      const dialog = await this.dialogsService.findOne(dialogId);
+      await this.editMessage(
+        chatId,
+        messageId,
+        [
+          '🗑 <b>Confirm dialog deletion</b>',
+          `Title: <b>${this.esc(dialog.title)}</b>`,
+          `Status: <code>${dialog.status}</code>`,
+          `ID: <code>${dialog.id}</code>`,
+          '',
+          'Delete this dialog permanently?',
+        ].join('\n'),
+        [
+          [
+            { text: '✅ Yes, delete', callback_data: `dlgyes:${dialog.id}` },
+            { text: '❌ Cancel', callback_data: 'dlgno:' },
+          ],
+        ],
+      );
+    } catch {
+      await this.editMessage(chatId, messageId, '❌ Dialog not found.');
+    }
+  }
+
+  private async deleteDialogById(
+    chatId: string,
+    messageId: number,
+    dialogId: string,
+    callbackQueryId: string,
+  ): Promise<void> {
+    try {
+      const dialog = await this.dialogsService.findOne(dialogId);
+      await this.dialogsService.forceRemove(dialogId);
+      await this.answerCallback(callbackQueryId, `Deleted ${dialog.title}`);
+      await this.listDialogs(chatId, 1, messageId);
+    } catch (err) {
+      await this.answerCallback(callbackQueryId, err.message ?? 'Failed', true);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reports
+  // ---------------------------------------------------------------------------
+
+  private async sendSessionsReport(chatId: string): Promise<void> {
+    await this.send(chatId, '⏳ Building sessions report…');
+    try {
+      const r = await this.deviceLoginsService.getSummaryReport();
+      await this.send(chatId, this.formatSessionsReport(r));
+    } catch (err) {
+      await this.send(chatId, `❌ ${this.esc(err.message ?? 'Failed')}`);
+    }
+  }
+
+  private async sendUsersReport(chatId: string): Promise<void> {
+    await this.send(chatId, '⏳ Building users report…');
+    try {
+      const r = await this.usersService.getSummaryReport();
+      await this.send(chatId, this.formatUsersReport(r));
+    } catch (err) {
+      await this.send(chatId, `❌ ${this.esc(err.message ?? 'Failed')}`);
+    }
+  }
+
+  private async sendCombinedReport(chatId: string): Promise<void> {
+    await this.send(chatId, '⏳ Building full report…');
+    try {
+      const [users, sessions] = await Promise.all([
+        this.usersService.getSummaryReport(),
+        this.deviceLoginsService.getSummaryReport(),
+      ]);
+      await this.send(
+        chatId,
+        [
+          this.formatUsersReport(users),
+          '',
+          this.formatSessionsReport(sessions),
+        ].join('\n'),
+      );
+    } catch (err) {
+      await this.send(chatId, `❌ ${this.esc(err.message ?? 'Failed')}`);
+    }
+  }
+
+  private formatUsersReport(
+    r: Awaited<ReturnType<UsersService['getSummaryReport']>>,
+  ): string {
+    const statusLines = Object.entries(r.byStatus)
+      .map(([k, v]) => `  ${k}: <b>${v}</b>`)
+      .join('\n');
+    const roleLines = Object.entries(r.byRole)
+      .map(([k, v]) => `  ${k}: <b>${v}</b>`)
+      .join('\n');
+    const platformLines = Object.entries(r.byPlatform)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `  ${this.esc(k)}: <b>${v}</b>`)
+      .join('\n');
+
+    return [
+      '👥 <b>Users Report</b>',
+      `🕐 <code>${new Date().toUTCString()}</code>`,
+      '',
+      `Total users: <b>${r.total}</b>`,
+      `  With email: <b>${r.withEmail}</b>`,
+      `  Device-only: <b>${r.deviceOnly}</b>`,
+      '',
+      '<b>New registrations</b>',
+      `  Last 24h: <b>${r.last24h}</b>`,
+      `  Last 7d: <b>${r.last7d}</b>`,
+      `  Last 30d: <b>${r.last30d}</b>`,
+      '',
+      '<b>Active logins</b>',
+      `  Logged in last 24h: <b>${r.loggedInLast24h}</b>`,
+      `  Logged in last 7d: <b>${r.loggedInLast7d}</b>`,
+      '',
+      '<b>By status</b>',
+      statusLines || '  —',
+      '',
+      '<b>By role</b>',
+      roleLines || '  —',
+      '',
+      '<b>By platform</b>',
+      platformLines || '  —',
+    ].join('\n');
+  }
+
+  private formatSessionsReport(
+    r: Awaited<ReturnType<DeviceLoginsService['getSummaryReport']>>,
+  ): string {
+    const platformLines = Object.entries(r.byPlatform)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `  ${this.esc(k)}: <b>${v}</b>`)
+      .join('\n');
+
+    const recentLines = r.recentLogins.map((l) => {
+      const icon = l.isActive ? '🟢' : '⚪';
+      const name = l.deviceName || l.deviceId.slice(0, 10);
+      const when = l.loginAt ? new Date(l.loginAt).toISOString().slice(0, 16).replace('T', ' ') : '?';
+      return `  ${icon} ${this.esc(name)} · ${this.esc(l.platform || '?')} · <code>${when}</code>`;
+    });
+
+    return [
+      '📱 <b>Login Sessions Report</b>',
+      `🕐 <code>${new Date().toUTCString()}</code>`,
+      '',
+      `Total logins: <b>${r.totalLogins}</b>`,
+      `Active sessions: <b>${r.activeSessions}</b>`,
+      `Unique devices: <b>${r.uniqueDevices}</b>`,
+      `Unique users: <b>${r.uniqueUsers}</b>`,
+      '',
+      '<b>Login volume</b>',
+      `  Last 24h: <b>${r.last24h}</b>`,
+      `  Last 7d: <b>${r.last7d}</b>`,
+      `  Last 30d: <b>${r.last30d}</b>`,
+      '',
+      '<b>By platform</b>',
+      platformLines || '  —',
+      '',
+      '<b>Recent logins</b>',
+      ...(recentLines.length ? recentLines : ['  —']),
+    ].join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
   // Parsing helpers
   // ---------------------------------------------------------------------------
+
+  private parseDialogType(value: string): DialogType | null {
+    const normalized = value.trim().toLowerCase();
+    return Object.values(DialogType).includes(normalized as DialogType)
+      ? (normalized as DialogType)
+      : null;
+  }
+
+  private parseDialogTarget(value: string): DialogTarget | null {
+    const normalized = value.trim().toLowerCase();
+    return Object.values(DialogTarget).includes(normalized as DialogTarget)
+      ? (normalized as DialogTarget)
+      : null;
+  }
 
   private parseType(value: string): V2RayConfigType | null {
     const normalized = value.trim().toLowerCase();

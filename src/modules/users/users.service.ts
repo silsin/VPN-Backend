@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { User, UserStatus } from './entities/user.entity';
+import { User, UserRole, UserStatus } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -153,5 +153,114 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
+  /**
+   * Global users summary for admin reports (Telegram / dashboard).
+   */
+  async getSummaryReport(): Promise<{
+    total: number;
+    withEmail: number;
+    deviceOnly: number;
+    last24h: number;
+    last7d: number;
+    last30d: number;
+    loggedInLast24h: number;
+    loggedInLast7d: number;
+    byStatus: Record<string, number>;
+    byRole: Record<string, number>;
+    byPlatform: Record<string, number>;
+  }> {
+    const now = new Date();
+    const d1 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      total,
+      withEmail,
+      last24h,
+      last7d,
+      last30d,
+      loggedInLast24h,
+      loggedInLast7d,
+      byStatusRaw,
+      byRoleRaw,
+      byPlatformRaw,
+    ] = await Promise.all([
+      this.usersRepository.count(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .where('u.email IS NOT NULL')
+        .getCount(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .where('u.createdAt >= :d', { d: d1 })
+        .getCount(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .where('u.createdAt >= :d', { d: d7 })
+        .getCount(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .where('u.createdAt >= :d', { d: d30 })
+        .getCount(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .where('u.lastLoginAt >= :d', { d: d1 })
+        .getCount(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .where('u.lastLoginAt >= :d', { d: d7 })
+        .getCount(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .select('u.status', 'status')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('u.status')
+        .getRawMany<{ status: string; count: string }>(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .select('u.role', 'role')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy('u.role')
+        .getRawMany<{ role: string; count: string }>(),
+      this.usersRepository
+        .createQueryBuilder('u')
+        .select("COALESCE(NULLIF(TRIM(u.platform), ''), 'unknown')", 'platform')
+        .addSelect('COUNT(*)', 'count')
+        .groupBy("COALESCE(NULLIF(TRIM(u.platform), ''), 'unknown')")
+        .getRawMany<{ platform: string; count: string }>(),
+    ]);
+
+    const byStatus: Record<string, number> = {};
+    for (const s of Object.values(UserStatus)) byStatus[s] = 0;
+    for (const row of byStatusRaw) {
+      byStatus[row.status] = parseInt(row.count, 10);
+    }
+
+    const byRole: Record<string, number> = {};
+    for (const r of Object.values(UserRole)) byRole[r] = 0;
+    for (const row of byRoleRaw) {
+      byRole[row.role] = parseInt(row.count, 10);
+    }
+
+    const byPlatform: Record<string, number> = {};
+    for (const row of byPlatformRaw) {
+      byPlatform[row.platform] = parseInt(row.count, 10);
+    }
+
+    return {
+      total,
+      withEmail,
+      deviceOnly: total - withEmail,
+      last24h,
+      last7d,
+      last30d,
+      loggedInLast24h,
+      loggedInLast7d,
+      byStatus,
+      byRole,
+      byPlatform,
+    };
+  }
 }
 
