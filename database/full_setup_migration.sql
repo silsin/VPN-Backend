@@ -184,6 +184,10 @@ CREATE TABLE IF NOT EXISTS dialogs (
   type VARCHAR(20) NOT NULL CHECK (type IN ('in-app', 'push', 'both')),
   status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'scheduled', 'sent', 'cancelled')),
   target VARCHAR(20) NOT NULL DEFAULT 'all' CHECK (target IN ('all', 'android', 'ios')),
+  placement VARCHAR(50) NOT NULL DEFAULT 'general' CHECK (placement IN (
+    'general', 'splash', 'before_connect', 'after_connect'
+  )),
+  repeatable BOOLEAN NOT NULL DEFAULT false,
   priority VARCHAR(50) NOT NULL DEFAULT 'normal',
   title VARCHAR(255) NOT NULL,
   message TEXT NOT NULL,
@@ -283,6 +287,7 @@ CREATE INDEX IF NOT EXISTS idx_ads_is_active ON ads("isActive");
 CREATE INDEX IF NOT EXISTS idx_dialogs_status ON dialogs(status);
 CREATE INDEX IF NOT EXISTS idx_dialogs_type ON dialogs(type);
 CREATE INDEX IF NOT EXISTS idx_dialogs_target ON dialogs(target);
+CREATE INDEX IF NOT EXISTS idx_dialogs_placement ON dialogs(placement);
 CREATE INDEX IF NOT EXISTS idx_dialogs_schedule_time ON dialogs(schedule_time) WHERE schedule_time IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_dialogs_created_at ON dialogs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dialog_deliveries_dialog_id ON dialog_deliveries(dialog_id);
@@ -462,7 +467,9 @@ INSERT INTO "__migrations_history" (name) VALUES
   ('011_ensure_protocols_enum.sql'),
   ('012_create_timer_tables.sql'),
   ('013_add_app_version_settings.sql'),
-  ('014_create_ad_failure_reports_table.sql')
+  ('014_create_ad_failure_reports_table.sql'),
+  ('015_add_dialog_placement.sql'),
+  ('016_add_dialog_repeatable.sql')
 ON CONFLICT (name) DO NOTHING;
 
 -- -----------------------------------------------------------------------------

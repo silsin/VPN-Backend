@@ -6,11 +6,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
-import { Dialog, DialogStatus } from './entities/dialog.entity';
+import { Dialog, DialogStatus, DialogPlacement } from './entities/dialog.entity';
 import { DialogDelivery } from './entities/dialog-delivery.entity';
 import { CreateDialogDto } from './dto/create-dialog.dto';
 import { UpdateDialogDto } from './dto/update-dialog.dto';
 import { FilterDialogDto } from './dto/filter-dialog.dto';
+import { DialogButtonDto } from './dto/dialog-button.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulerService } from '../notifications/scheduler.service';
 
@@ -34,8 +35,12 @@ export class DialogsService {
     createDialogDto: CreateDialogDto,
     userId?: string,
   ): Promise<Dialog> {
+    const normalizedButtons = this.normalizeButtons(createDialogDto.buttons);
     const dialog = this.dialogRepository.create({
       ...createDialogDto,
+      repeatable: createDialogDto.repeatable ?? false,
+      placement: createDialogDto.placement ?? DialogPlacement.GENERAL,
+      ...(normalizedButtons !== undefined ? { buttons: normalizedButtons } : {}),
       createdBy: userId,
     });
     this.logger.log(`Creating dialog with payload: ${JSON.stringify(createDialogDto)}`);
@@ -84,7 +89,7 @@ export class DialogsService {
     limit: number;
     totalPages: number;
   }> {
-    const { page, limit, sortBy, sortOrder, search, type, status, target } =
+    const { page, limit, sortBy, sortOrder, search, type, status, target, placement } =
       filterDto;
 
     const queryBuilder = this.dialogRepository.createQueryBuilder('dialog');
@@ -100,6 +105,10 @@ export class DialogsService {
 
     if (target) {
       queryBuilder.andWhere('dialog.target = :target', { target });
+    }
+
+    if (placement) {
+      queryBuilder.andWhere('dialog.placement = :placement', { placement });
     }
 
     if (search) {
@@ -212,7 +221,11 @@ export class DialogsService {
     }
 
     // Update fields
-    Object.assign(dialog, updateDialogDto);
+    const { buttons, ...rest } = updateDialogDto;
+    Object.assign(dialog, rest);
+    if (buttons !== undefined) {
+      dialog.buttons = this.normalizeButtons(buttons) ?? null;
+    }
 
     const updatedDialog = await this.dialogRepository.save(dialog);
 
@@ -422,7 +435,11 @@ export class DialogsService {
   /**
    * Get active in-app dialogs for mobile devices
    */
-  async getActiveDialogsForMobile(platform?: string): Promise<Dialog[]> {
+  async getActiveDialogsForMobile(
+    platform?: string,
+    placement?: string,
+    deviceId?: string,
+  ): Promise<Dialog[]> {
     const queryBuilder = this.dialogRepository
       .createQueryBuilder('dialog')
       .where('dialog.status = :status', { status: DialogStatus.SENT })
@@ -436,6 +453,79 @@ export class DialogsService {
       );
     }
 
-    return queryBuilder.orderBy('dialog.sentTime', 'DESC').getMany();
+    if (placement) {
+      queryBuilder.andWhere('dialog.placement = :placement', { placement });
+    }
+
+    // Hide one-shot dialogs this device already dismissed/clicked
+    if (deviceId) {
+      queryBuilder.andWhere(
+        `NOT (
+          dialog.repeatable = false
+          AND EXISTS (
+            SELECT 1 FROM dialog_deliveries dd
+            WHERE dd.dialog_id = dialog.id
+              AND dd.device_id = :deviceId
+              AND (dd.dismissed = true OR dd.clicked = true)
+          )
+        )`,
+        { deviceId },
+      );
+    }
+
+    return queryBuilder
+      .orderBy('dialog.priority', 'DESC')
+      .addOrderBy('dialog.sentTime', 'DESC')
+      .getMany();
+  }
+
+  /**
+   * Normalize button payloads so both title/label and isPrimary/style work.
+   * Stored shape always includes title, label, style, and isPrimary.
+   */
+  private normalizeButtons(
+    buttons?: DialogButtonDto[] | null,
+  ): Dialog['buttons'] | undefined {
+    if (buttons === undefined) {
+      return undefined;
+    }
+    if (buttons === null || buttons.length === 0) {
+      return null as unknown as Dialog['buttons'];
+    }
+
+    return buttons.map((button, index) => {
+      const text = (button.title ?? button.label ?? '').trim();
+      if (!text) {
+        throw new BadRequestException(
+          `Button #${index + 1}: title (or label) is required`,
+        );
+      }
+
+      const isPrimary =
+        button.isPrimary === true ||
+        (button.isPrimary !== false && button.style === 'primary');
+
+      let style = button.style;
+      if (isPrimary) {
+        style = 'primary';
+      } else if (!style) {
+        style = 'secondary';
+      }
+
+      if (!button.actionUrl && !button.action) {
+        throw new BadRequestException(
+          `Button #${index + 1} ("${text}"): provide actionUrl or action`,
+        );
+      }
+
+      return {
+        label: text,
+        title: text,
+        ...(button.actionUrl ? { actionUrl: button.actionUrl } : {}),
+        ...(button.action ? { action: button.action } : {}),
+        style,
+        isPrimary,
+      };
+    });
   }
 }

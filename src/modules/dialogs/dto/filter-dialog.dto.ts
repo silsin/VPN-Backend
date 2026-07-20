@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsEnum, IsString, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { DialogType, DialogStatus, DialogTarget } from '../entities/dialog.entity';
+import { DialogType, DialogStatus, DialogTarget, DialogPlacement } from '../entities/dialog.entity';
 
 export class FilterDialogDto {
   @ApiProperty({
@@ -30,6 +30,15 @@ export class FilterDialogDto {
   @IsOptional()
   @IsEnum(DialogTarget)
   target?: DialogTarget;
+
+  @ApiProperty({
+    required: false,
+    description: 'Filter by when to show (placement)',
+    enum: DialogPlacement,
+  })
+  @IsOptional()
+  @IsEnum(DialogPlacement)
+  placement?: DialogPlacement;
 
   @ApiProperty({
     required: false,

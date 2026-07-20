@@ -223,22 +223,28 @@ export class NotificationsService {
   }
 
   /**
-   * Update delivery status (called from mobile app)
+   * Update delivery status (called from mobile app).
+   * Upserts a delivery row so in-app dialogs (no push send) are still tracked.
    */
   async updateDeliveryStatus(
     dialogId: string,
     deviceId: string,
     action: 'click' | 'dismiss',
   ): Promise<void> {
-    const delivery = await this.dialogDeliveryRepository.findOne({
+    let delivery = await this.dialogDeliveryRepository.findOne({
       where: { dialogId, deviceId },
     });
 
     if (!delivery) {
-      this.logger.warn(
-        `Delivery not found for dialog ${dialogId} and device ${deviceId}`,
-      );
-      return;
+      delivery = this.dialogDeliveryRepository.create({
+        dialogId,
+        deviceId,
+        deliveryStatus: DeliveryStatus.DELIVERED,
+        deliveredAt: new Date(),
+        sentAt: new Date(),
+        clicked: false,
+        dismissed: false,
+      });
     }
 
     if (action === 'click') {

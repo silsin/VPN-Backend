@@ -152,38 +152,108 @@ GET /api/v1/ads/failure-reports/summary?days=7
 
 ---
 
-## 3. Dialogs with buttons & links
+## 3. Dialogs with buttons, links & placement
 
-Dialogs already support `actionUrl` and `buttons` on the API. Mobile:
+Dialogs support `actionUrl`, `buttons`, and **`placement`** (when to show).
 
-```http
-GET /api/v1/mobile/dialogs?platform=android
+### Placement values
+
+| Value | When mobile should show |
+|-------|-------------------------|
+| `splash` | Splash / launch screen |
+| `before_connect` | Before VPN connect |
+| `after_connect` | After VPN connect succeeds |
+| `general` | General / home (or whenever you choose) |
+
+### Repeatable (show again after dismiss)
+
+| `repeatable` | Behavior |
+|--------------|----------|
+| `false` (default) | Show **once** per device — after dismiss/click it won’t return |
+| `true` | Keep showing every time (promo / tip dialogs) |
+
+### Create (admin / API)
+
+```json
+{
+  "type": "in-app",
+  "target": "all",
+  "placement": "before_connect",
+  "repeatable": true,
+  "priority": "high",
+  "title": "Connect tip",
+  "message": "...",
+  "buttons": [
+    {
+      "title": "OK",
+      "isPrimary": true,
+      "action": "dismiss"
+    }
+  ]
+}
 ```
 
-Each dialog may include:
+### Mobile fetch
+
+Always pass `deviceId` so the server can hide one-shot dialogs already seen:
+
+```http
+GET /api/v1/mobile/dialogs?platform=android&placement=splash&deviceId=DEVICE_ID
+GET /api/v1/mobile/dialogs?platform=android&placement=before_connect&deviceId=DEVICE_ID
+GET /api/v1/mobile/dialogs?platform=android&placement=after_connect&deviceId=DEVICE_ID
+```
+
+After show, call dismiss/click so non-repeatable dialogs stay hidden:
+
+```http
+POST /api/v1/mobile/dialogs/:id/dismiss
+{ "deviceId": "DEVICE_ID" }
+```
+
+### Mobile rules
+
+1. Fetch with `platform` + `placement` + `deviceId`.
+2. If `repeatable === true` → always show when returned.
+3. If `repeatable === false` → show once; after dismiss/click server won’t return it again for that device (also keep local cache as backup).
+4. Prefer server `deviceId` filter over only local “seen” list so reinstalls still respect one-shot dialogs.
+
+Each dialog includes:
 
 ```json
 {
   "id": "...",
+  "placement": "before_connect",
   "title": "Update available",
   "message": "...",
   "actionUrl": "https://example.com",
   "buttons": [
     {
-      "label": "Update",
+      "title": "Update",
       "actionUrl": "https://play.google.com/...",
+      "isPrimary": true,
       "style": "primary"
     },
     {
-      "label": "Later",
+      "title": "Later",
       "action": "dismiss",
+      "isPrimary": false,
       "style": "secondary"
     }
   ]
 }
 ```
 
-Button fields: `label` (required), `actionUrl` and/or `action`, optional `style` (`primary` \| `secondary` \| `danger` \| `success`).
+Button fields:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `title` or `label` | yes (one of them) | Button text shown to the user |
+| `isPrimary` | no | `true` = main CTA (also sets `style` to `primary`) |
+| `style` | no | `primary` \| `secondary` \| `danger` \| `success` |
+| `actionUrl` | one of url/action | Link to open |
+| `action` | one of url/action | e.g. `dismiss` |
+
+API accepts both `title`/`label` and `isPrimary`/`style`. Saved buttons always include `title`, `label`, `style`, and `isPrimary`.
 
 Track interactions:
 
@@ -192,25 +262,26 @@ POST /api/v1/mobile/dialogs/:id/click   { "deviceId": "..." }
 POST /api/v1/mobile/dialogs/:id/dismiss { "deviceId": "..." }
 ```
 
-### Telegram bot: create dialog with link + buttons
+### Telegram bot: create dialog with placement, link + buttons
 
 ```
-/dialogadd in-app all high
+/dialogadd in-app all high before_connect
+/dialogadd in-app all normal splash repeatable
+/dialogadd in-app all after_connect
 ```
+
+Bot asks **repeatable?** (`yes`/`no`) if you didn’t pass `repeatable`/`once` in the command.
 
 Then wizard steps:
 
 1. **Title**
 2. **Message**
 3. **Action link** — full `https://...` URL, or `-` to skip
-4. **Buttons** — one per line, or `-` to skip:
-
-```
-Update|https://play.google.com/store/apps/details?id=com.flyvpn|primary
-Later|dismiss|secondary
-```
-
-Format: `Label|url-or-action|style`
+4. **Buttons** (repeatable):
+   - Send **button title** (the text on the button)
+   - Send `yes` / `no` for **primary**
+   - Send **URL** or action (`dismiss`)
+   - Repeat, or send `-` / `done` to finish
 
 Then `/dialogenable <uuid>` to publish to mobile.
 
@@ -224,6 +295,6 @@ See also: `DIALOG_BUTTONS_FRONTEND_GUIDE.md` for UI patterns.
 |---------|-----------------|------|
 | Upgrade check | `GET /mobile/app-version?platform=&build=` | Public |
 | Ad failure report | `POST /mobile/ads/failure-report` | Public |
-| Active dialogs | `GET /mobile/dialogs?platform=` | Public |
+| Active dialogs | `GET /mobile/dialogs?platform=&placement=&deviceId=` | Public |
 | Admin version settings | `PUT /settings` `{ "app_version": {...} }` | JWT admin |
 | Admin ad reports | `GET /ads/failure-reports` | JWT |

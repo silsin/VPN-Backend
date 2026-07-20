@@ -25,6 +25,14 @@ export enum DialogTarget {
   IOS = 'ios',
 }
 
+/** When the mobile app should show this dialog */
+export enum DialogPlacement {
+  GENERAL = 'general',
+  SPLASH = 'splash',
+  BEFORE_CONNECT = 'before_connect',
+  AFTER_CONNECT = 'after_connect',
+}
+
 @Entity('dialogs')
 export class Dialog {
   @PrimaryGeneratedColumn('uuid')
@@ -53,6 +61,17 @@ export class Dialog {
   })
   target: DialogTarget;
 
+  @Column({
+    type: 'varchar',
+    length: 50,
+    enum: DialogPlacement,
+    default: DialogPlacement.GENERAL,
+  })
+  placement: DialogPlacement;
+
+  @Column({ type: 'boolean', default: false })
+  repeatable: boolean;
+
   @Column({ type: 'varchar', length: 255 })
   title: string;
 
@@ -71,9 +90,11 @@ export class Dialog {
   @Column({ type: 'jsonb', nullable: true, name: 'buttons' })
   buttons: Array<{
     label: string;
+    title: string;
     actionUrl?: string;
     action?: string;
     style?: string;
+    isPrimary?: boolean;
   }>;
 
   @Column({ type: 'timestamp with time zone', nullable: true, name: 'schedule_time' })

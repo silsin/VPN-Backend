@@ -5,19 +5,20 @@ import {
   IsOptional,
   IsUrl,
   IsDateString,
+  IsBoolean,
   MinLength,
   MaxLength,
   IsArray,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { DialogType, DialogTarget } from '../entities/dialog.entity';
+import { DialogType, DialogTarget, DialogPlacement } from '../entities/dialog.entity';
 import { DialogButtonDto } from './dialog-button.dto';
 
 export class CreateDialogDto {
   @ApiProperty({
     example: 'both',
-    description: 'Type of dialog',
+    description: 'Delivery channel: in-app, push, or both',
     enum: DialogType,
   })
   @IsEnum(DialogType)
@@ -33,6 +34,38 @@ export class CreateDialogDto {
   @IsOptional()
   @IsEnum(DialogTarget)
   target?: DialogTarget;
+
+  @ApiProperty({
+    example: DialogPlacement.BEFORE_CONNECT,
+    description:
+      'When to show on mobile: general | splash | before_connect | after_connect',
+    enum: DialogPlacement,
+    required: false,
+    default: DialogPlacement.GENERAL,
+  })
+  @IsOptional()
+  @IsEnum(DialogPlacement)
+  placement?: DialogPlacement;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'If true, keep showing on mobile after dismiss. If false (default), show once per device.',
+    required: false,
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === true || value === 'true' || value === 1 || value === '1') {
+      return true;
+    }
+    if (value === false || value === 'false' || value === 0 || value === '0') {
+      return false;
+    }
+    return value;
+  })
+  @IsBoolean()
+  repeatable?: boolean;
 
   @ApiProperty({
     example: 'high',
@@ -84,17 +117,20 @@ export class CreateDialogDto {
   @ApiProperty({
     example: [
       {
-        label: 'دانلود',
+        title: 'Download',
         actionUrl: 'https://example.com/download',
+        isPrimary: true,
         style: 'primary',
       },
       {
-        label: 'بعداً',
+        title: 'Later',
         action: 'dismiss',
+        isPrimary: false,
         style: 'secondary',
       },
     ],
-    description: 'Array of action buttons for the dialog',
+    description:
+      'Action buttons. Use title (or label) for button text, isPrimary:true for the main CTA.',
     required: false,
     type: [DialogButtonDto],
   })

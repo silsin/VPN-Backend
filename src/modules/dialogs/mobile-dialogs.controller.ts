@@ -11,6 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { DialogsService } from './dialogs.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DialogPlacement } from './entities/dialog.entity';
 
 @ApiTags('Mobile Dialogs')
 @Controller('mobile/dialogs')
@@ -21,19 +22,42 @@ export class MobileDialogsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get active in-app dialogs for mobile devices' })
+  @ApiOperation({
+    summary: 'Get active in-app dialogs for mobile devices',
+  })
   @ApiQuery({
     name: 'platform',
     required: false,
     enum: ['android', 'ios'],
     description: 'Filter by platform',
   })
+  @ApiQuery({
+    name: 'placement',
+    required: false,
+    enum: DialogPlacement,
+    description:
+      'When to show: splash | before_connect | after_connect | general (exact match)',
+  })
+  @ApiQuery({
+    name: 'deviceId',
+    required: false,
+    description:
+      'Device id — hides non-repeatable dialogs this device already dismissed/clicked',
+  })
   @ApiResponse({
     status: 200,
     description: 'Active dialogs retrieved successfully',
   })
-  getActiveDialogs(@Query('platform') platform?: string) {
-    return this.dialogsService.getActiveDialogsForMobile(platform);
+  getActiveDialogs(
+    @Query('platform') platform?: string,
+    @Query('placement') placement?: string,
+    @Query('deviceId') deviceId?: string,
+  ) {
+    return this.dialogsService.getActiveDialogsForMobile(
+      platform,
+      placement,
+      deviceId,
+    );
   }
 
   @Post(':id/click')

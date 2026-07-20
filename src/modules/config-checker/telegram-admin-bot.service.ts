@@ -18,6 +18,7 @@ import {
   DialogStatus,
   DialogTarget,
   DialogType,
+  DialogPlacement,
 } from '../dialogs/entities/dialog.entity';
 import { DeviceLoginsService } from '../device-logins/device-logins.service';
 import { UsersService } from '../users/users.service';
@@ -70,20 +71,32 @@ interface PendingBulk {
 
 interface PendingDialogButton {
   label: string;
+  title: string;
   actionUrl?: string;
   action?: string;
   style?: string;
+  isPrimary?: boolean;
 }
 
 interface PendingDialogAdd {
-  step: 'title' | 'message' | 'actionUrl' | 'buttons';
+  step:
+    | 'repeatable'
+    | 'title'
+    | 'message'
+    | 'actionUrl'
+    | 'buttonTitle'
+    | 'buttonPrimary'
+    | 'buttonTarget';
   type: DialogType;
   target: DialogTarget;
+  placement: DialogPlacement;
   priority: string;
+  repeatable: boolean;
   title?: string;
   message?: string;
   actionUrl?: string;
-  buttons?: PendingDialogButton[];
+  buttons: PendingDialogButton[];
+  draftButton?: { title?: string; isPrimary?: boolean };
 }
 
 @Injectable()
@@ -411,8 +424,8 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '',
         '<b>Dialogs</b>',
         '/dialogs [page] — list with enable/disable/delete',
-        '/dialogadd &lt;type&gt; &lt;target&gt; [priority]',
-        '  then: title → message → link → buttons',
+        '/dialogadd &lt;type&gt; &lt;target&gt; [priority] [placement] [repeatable]',
+        '  then: repeatable? → title → message → link → buttons',
         '/dialogenable &lt;uuid&gt; — show on mobile (sent)',
         '/dialogdisable &lt;uuid&gt; — hide (cancelled)',
         '/dialogdel &lt;uuid&gt; — delete dialog',
@@ -432,10 +445,13 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '<b>Categories:</b> splash, main, backup',
         '<b>Dialog types:</b> in-app, push, both',
         '<b>Targets:</b> all, android, ios',
+        '<b>Placements:</b> general, splash, before_connect, after_connect',
+        '<b>Repeatable:</b> add <code>repeatable</code> to show again after dismiss',
         '',
         '<b>Examples</b>',
         '<code>/add Iran-1 v2ray_link main ir</code>',
-        '<code>/dialogadd in-app all high</code>',
+        '<code>/dialogadd in-app all high before_connect</code>',
+        '<code>/dialogadd in-app all high splash repeatable</code>',
         '<code>/adsreports</code>',
         '<code>/adssummary 7</code>',
       ].join('\n'),
@@ -1007,7 +1023,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       (d, i) =>
         `${(safePage - 1) * this.DIALOG_PAGE_SIZE + i + 1}. ${this.dialogStatusIcon(d.status)} <b>${this.esc(d.title)}</b>\n` +
         `   <code>${d.id}</code>\n` +
-        `   ${d.type} · ${d.target} · ${d.status} · ${d.priority}`,
+        `   ${d.type} · ${d.target} · ${d.placement || 'general'} · ${d.repeatable ? 'repeat' : 'once'} · ${d.status} · ${d.priority}`,
     );
 
     const text = [
@@ -1079,25 +1095,58 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         chatId,
         [
           'Usage:',
-          '<code>/dialogadd &lt;type&gt; &lt;target&gt; [priority]</code>',
+          '<code>/dialogadd &lt;type&gt; &lt;target&gt; [priority] [placement] [repeatable]</code>',
           '',
           'Example:',
-          '<code>/dialogadd in-app all high</code>',
+          '<code>/dialogadd in-app all high before_connect</code>',
+          '<code>/dialogadd in-app all normal splash repeatable</code>',
           '',
-          'Then send: <b>title</b> → <b>message</b> → <b>link</b> → <b>buttons</b>',
+          'Then: <b>repeatable?</b> (if not set) → title → message → link → buttons',
           '',
           'Types: in-app, push, both',
           'Targets: all, android, ios',
+          'Placements: general, splash, before_connect, after_connect',
+          'Add <code>repeatable</code> to show again after dismiss (default: once).',
           'For link/buttons steps send <code>-</code> to skip.',
         ].join('\n'),
       );
       return;
     }
 
-    const [typeRaw, targetRaw, priorityRaw] = args;
+    const [typeRaw, targetRaw, ...rest] = args;
     const type = this.parseDialogType(typeRaw);
     const target = this.parseDialogTarget(targetRaw);
-    const priority = (priorityRaw || 'normal').slice(0, 50);
+
+    let priority = 'normal';
+    let placement = DialogPlacement.GENERAL;
+    let repeatable: boolean | null = null;
+
+    for (const token of rest) {
+      const lower = token.toLowerCase();
+      if (lower === 'repeatable' || lower === 'repeat') {
+        repeatable = true;
+        continue;
+      }
+      if (lower === 'once' || lower === 'no-repeat' || lower === 'norepeat') {
+        repeatable = false;
+        continue;
+      }
+      const asPlacement = this.parseDialogPlacement(token);
+      if (asPlacement) {
+        placement = asPlacement;
+        continue;
+      }
+      // first non-placement / non-flag token is priority
+      if (priority === 'normal' && !asPlacement) {
+        priority = token.slice(0, 50);
+        continue;
+      }
+      await this.send(
+        chatId,
+        `Unknown arg <code>${this.esc(token)}</code>. Use placement, priority, or repeatable/once.`,
+      );
+      return;
+    }
 
     if (!type) {
       await this.send(
@@ -1114,12 +1163,32 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.pendingDialogAdds.set(Number(chatId), {
-      step: 'title',
+    const pending: PendingDialogAdd = {
+      step: repeatable === null ? 'repeatable' : 'title',
       type,
       target,
+      placement,
       priority,
-    });
+      repeatable: repeatable ?? false,
+      buttons: [],
+    };
+    this.pendingDialogAdds.set(Number(chatId), pending);
+
+    if (pending.step === 'repeatable') {
+      await this.send(
+        chatId,
+        [
+          '🔁 <b>Should this dialog be repeatable?</b>',
+          `Type: <code>${type}</code> · Target: <code>${target}</code>`,
+          `Placement: <code>${placement}</code> · Priority: <code>${this.esc(priority)}</code>`,
+          '',
+          'Send <code>yes</code> to show again after dismiss.',
+          'Send <code>no</code> to show only once per device.',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
+      return;
+    }
 
     await this.send(
       chatId,
@@ -1127,6 +1196,8 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '✏️ <b>Step 2 — send dialog title</b>',
         `Type: <code>${type}</code>`,
         `Target: <code>${target}</code>`,
+        `Placement: <code>${placement}</code>`,
+        `Repeatable: <code>${pending.repeatable}</code>`,
         `Priority: <code>${this.esc(priority)}</code>`,
         '',
         'Send /cancel to abort.',
@@ -1137,6 +1208,32 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private async continueDialogAdd(chatId: number, text: string): Promise<void> {
     const pending = this.pendingDialogAdds.get(chatId);
     if (!pending) return;
+
+    if (pending.step === 'repeatable') {
+      const answer = text.trim().toLowerCase();
+      const yes = ['yes', 'y', '1', 'true', 'repeatable', 'repeat'].includes(answer);
+      const no = ['no', 'n', '0', 'false', 'once'].includes(answer);
+      if (!yes && !no) {
+        await this.send(
+          String(chatId),
+          '❌ Send <code>yes</code> (repeatable) or <code>no</code> (once).',
+        );
+        return;
+      }
+      pending.repeatable = yes;
+      pending.step = 'title';
+      this.pendingDialogAdds.set(chatId, pending);
+      await this.send(
+        String(chatId),
+        [
+          '✏️ <b>Send dialog title</b>',
+          `Repeatable: <code>${yes}</code>`,
+          '',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
+      return;
+    }
 
     if (pending.step === 'title') {
       if (!text || text.length > 255) {
@@ -1192,68 +1289,168 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         }
         pending.actionUrl = trimmed;
       }
-      pending.step = 'buttons';
+      pending.step = 'buttonTitle';
       this.pendingDialogAdds.set(chatId, pending);
       await this.send(
         String(chatId),
         [
-          '🔘 <b>Step 5 — buttons (optional)</b>',
-          'One button per line:',
-          '<code>Label|https://example.com|primary</code>',
-          '<code>Label|dismiss|secondary</code>',
+          '🔘 <b>Step 5 — button title</b>',
+          'Send the text shown on the button.',
           '',
-          'Styles: primary, secondary, danger, success',
-          'Send <code>-</code> to skip buttons and create the dialog.',
+          'Example: <code>Update now</code>',
+          'Or send <code>-</code> to finish without more buttons.',
           'Send /cancel to abort.',
         ].join('\n'),
       );
       return;
     }
 
-    // step === 'buttons'
-    const trimmed = text.trim();
-    if (trimmed !== '-' && trimmed.toLowerCase() !== 'skip') {
-      const buttons = this.parseDialogButtons(trimmed);
-      if (!buttons) {
+    if (pending.step === 'buttonTitle') {
+      const trimmed = text.trim();
+      if (trimmed === '-' || trimmed.toLowerCase() === 'skip' || trimmed.toLowerCase() === 'done') {
+        await this.finishDialogAdd(chatId, pending);
+        return;
+      }
+      if (!trimmed || trimmed.length > 100) {
         await this.send(
           String(chatId),
-          [
-            '❌ Invalid button format. Use one per line:',
-            '<code>Label|https://url|primary</code>',
-            'or <code>Label|dismiss|secondary</code>',
-            'or send <code>-</code> to skip.',
-          ].join('\n'),
+          '❌ Button title required (max 100 chars). Try again, or <code>-</code> to finish.',
         );
         return;
       }
-      pending.buttons = buttons;
+      pending.draftButton = { title: trimmed };
+      pending.step = 'buttonPrimary';
+      this.pendingDialogAdds.set(chatId, pending);
+      await this.send(
+        String(chatId),
+        [
+          '⭐ <b>Is this button primary?</b>',
+          `Title: <b>${this.esc(trimmed)}</b>`,
+          '',
+          'Send <code>yes</code> for primary CTA, or <code>no</code> for secondary.',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
+      return;
     }
 
+    if (pending.step === 'buttonPrimary') {
+      const answer = text.trim().toLowerCase();
+      const yes = ['yes', 'y', '1', 'primary', 'true'].includes(answer);
+      const no = ['no', 'n', '0', 'secondary', 'false'].includes(answer);
+      if (!yes && !no) {
+        await this.send(
+          String(chatId),
+          '❌ Please send <code>yes</code> (primary) or <code>no</code> (secondary).',
+        );
+        return;
+      }
+      pending.draftButton = {
+        ...(pending.draftButton || {}),
+        isPrimary: yes,
+      };
+      pending.step = 'buttonTarget';
+      this.pendingDialogAdds.set(chatId, pending);
+      await this.send(
+        String(chatId),
+        [
+          '🔗 <b>Button action</b>',
+          `Title: <b>${this.esc(pending.draftButton.title || '')}</b>`,
+          `Primary: <b>${yes ? 'yes' : 'no'}</b>`,
+          '',
+          'Send a full URL, or an action like <code>dismiss</code>.',
+          'Send /cancel to abort.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    if (pending.step === 'buttonTarget') {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        await this.send(String(chatId), '❌ Send a URL or action (e.g. dismiss).');
+        return;
+      }
+
+      const title = pending.draftButton?.title?.trim();
+      if (!title) {
+        pending.step = 'buttonTitle';
+        pending.draftButton = undefined;
+        this.pendingDialogAdds.set(chatId, pending);
+        await this.send(String(chatId), '❌ Missing button title. Send the title again.');
+        return;
+      }
+
+      const isPrimary = pending.draftButton?.isPrimary === true;
+      const button: PendingDialogButton = {
+        label: title,
+        title,
+        style: isPrimary ? 'primary' : 'secondary',
+        isPrimary,
+      };
+      if (/^https?:\/\//i.test(trimmed)) {
+        button.actionUrl = trimmed;
+      } else {
+        button.action = trimmed;
+      }
+
+      pending.buttons.push(button);
+      pending.draftButton = undefined;
+      pending.step = 'buttonTitle';
+      this.pendingDialogAdds.set(chatId, pending);
+
+      await this.send(
+        String(chatId),
+        [
+          `✅ Button added (${pending.buttons.length}): <b>${this.esc(title)}</b>` +
+            ` · ${isPrimary ? 'primary' : 'secondary'}`,
+          '',
+          'Send another <b>button title</b>, or <code>-</code> / <code>done</code> to create the dialog.',
+        ].join('\n'),
+      );
+      return;
+    }
+  }
+
+  private async finishDialogAdd(
+    chatId: number,
+    pending: PendingDialogAdd,
+  ): Promise<void> {
     this.pendingDialogAdds.delete(chatId);
 
     try {
       const saved = await this.dialogsService.create({
         type: pending.type,
         target: pending.target,
+        placement: pending.placement,
+        repeatable: pending.repeatable,
         priority: pending.priority,
         title: pending.title!,
         message: pending.message!,
         ...(pending.actionUrl ? { actionUrl: pending.actionUrl } : {}),
-        ...(pending.buttons?.length ? { buttons: pending.buttons } : {}),
+        ...(pending.buttons.length ? { buttons: pending.buttons } : {}),
       });
 
-      const buttonCount = saved.buttons?.length ?? 0;
+      const buttonLines = (saved.buttons || []).map(
+        (b, i) =>
+          `  ${i + 1}. <b>${this.esc(b.title || b.label)}</b>` +
+          ` · ${b.isPrimary || b.style === 'primary' ? 'primary' : b.style || 'secondary'}` +
+          (b.actionUrl ? ` · ${this.esc(b.actionUrl)}` : b.action ? ` · ${this.esc(b.action)}` : ''),
+      );
+
       await this.send(
         String(chatId),
         [
           '✅ <b>Dialog created</b> (draft)',
           `Title: <b>${this.esc(saved.title)}</b>`,
           `ID: <code>${saved.id}</code>`,
-          `${saved.type} · ${saved.target} · ${saved.status}`,
+          `${saved.type} · ${saved.target} · ${saved.placement} · ${saved.status}`,
+          `Repeatable: <code>${saved.repeatable ? 'yes' : 'no'}</code>`,
           saved.actionUrl
             ? `Link: ${this.esc(saved.actionUrl)}`
             : 'Link: (none)',
-          `Buttons: ${buttonCount}`,
+          `Buttons: ${saved.buttons?.length ?? 0}`,
+          ...(buttonLines.length ? buttonLines : []),
           '',
           'Enable it with /dialogenable or the ✅ button in /dialogs',
         ].join('\n'),
@@ -1266,6 +1463,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** @deprecated kept for any legacy pipe-format callers */
   private parseDialogButtons(text: string): PendingDialogButton[] | null {
     const lines = text
       .split(/\r?\n/)
@@ -1284,12 +1482,25 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       const style =
         styleRaw && styles.has(styleRaw.toLowerCase())
           ? styleRaw.toLowerCase()
-          : undefined;
+          : 'secondary';
+      const isPrimary = style === 'primary';
 
       if (/^https?:\/\//i.test(target)) {
-        buttons.push({ label, actionUrl: target, ...(style ? { style } : {}) });
+        buttons.push({
+          label,
+          title: label,
+          actionUrl: target,
+          style,
+          isPrimary,
+        });
       } else if (target) {
-        buttons.push({ label, action: target, ...(style ? { style } : {}) });
+        buttons.push({
+          label,
+          title: label,
+          action: target,
+          style,
+          isPrimary,
+        });
       } else {
         return null;
       }
@@ -1652,6 +1863,15 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     const normalized = value.trim().toLowerCase();
     return Object.values(DialogTarget).includes(normalized as DialogTarget)
       ? (normalized as DialogTarget)
+      : null;
+  }
+
+  private parseDialogPlacement(value: string): DialogPlacement | null {
+    const normalized = value.trim().toLowerCase().replace(/-/g, '_');
+    return Object.values(DialogPlacement).includes(
+      normalized as DialogPlacement,
+    )
+      ? (normalized as DialogPlacement)
       : null;
   }
 

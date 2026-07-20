@@ -18,18 +18,21 @@
   "imageUrl": "https://example.com/update-banner.png",
   "buttons": [
     {
-      "label": "دانلود",
+      "title": "دانلود",
       "actionUrl": "https://example.com/download",
+      "isPrimary": true,
       "style": "primary"
     },
     {
-      "label": "اطلاعات بیشتر",
+      "title": "اطلاعات بیشتر",
       "actionUrl": "https://example.com/changelog",
+      "isPrimary": false,
       "style": "secondary"
     },
     {
-      "label": "بعداً",
+      "title": "بعداً",
       "action": "dismiss",
+      "isPrimary": false,
       "style": "secondary"
     }
   ],
@@ -43,12 +46,14 @@
 
 | فیلد | نوع | الزامی | توضیحات |
 |------|-----|--------|---------|
-| \`label\` | string | ✅ بله | متن روی دکمه (مثلاً "دانلود"، "بستن") |
+| \`title\` یا \`label\` | string | ✅ بله (یکی) | متن روی دکمه |
+| \`isPrimary\` | boolean | ❌ خیر | اگر \`true\` باشد دکمه اصلی (primary) است |
 | \`actionUrl\` | string | ❌ خیر | لینک برای باز کردن (URL کامل) |
 | \`action\` | string | ❌ خیر | اکشن داخلی (مثلاً "dismiss" برای بستن دیالوگ) |
 | \`style\` | string | ❌ خیر | استایل دکمه: \`primary\`, \`secondary\`, \`danger\`, \`success\` |
 
-**نکته:** حداقل یکی از \`actionUrl\` یا \`action\` باید مقداردهی شود.
+**نکته:** حداقل یکی از \`actionUrl\` یا \`action\` باید مقداردهی شود.  
+برای عنوان دکمه می‌توانی \`title\` یا \`label\` بفرستی. برای دکمه اصلی \`isPrimary: true\` کافی است.
 
 ---
 
