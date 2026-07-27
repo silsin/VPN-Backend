@@ -54,7 +54,10 @@ export class TimerService {
       const configData = readFileSync(configPath, 'utf8');
       this.defaultConfigs = JSON.parse(configData) as TimerConfigs;
     } catch (error) {
-      console.error('Failed to load default timer configs:', error);
+      // Asset may be missing if nest build skipped JSON copy — use empty defaults
+      console.warn(
+        `Failed to load default timer configs (${error?.message ?? error}) — using empty defaults`,
+      );
       this.defaultConfigs = { timer_configs: {} };
     }
   }

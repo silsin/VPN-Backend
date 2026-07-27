@@ -7,6 +7,7 @@ import * as https from 'https';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import * as zlib from 'zlib';
 import { pipeline } from 'stream/promises';
 import { createWriteStream } from 'fs';
 
@@ -161,8 +162,8 @@ export class XrayInstallerService implements OnModuleInit {
 
     const zipPath = path.join(os.tmpdir(), `flyvpn-${asset}`);
     await this.downloadFile(url, zipPath);
+    this.assertValidZip(zipPath);
 
-    // Extract into installDir
     await this.extractZip(zipPath, this.installDir);
 
     try {
@@ -176,7 +177,6 @@ export class XrayInstallerService implements OnModuleInit {
       fs.chmodSync(bin, 0o755);
     }
 
-    // Persist version marker
     try {
       fs.writeFileSync(
         path.join(this.installDir, 'VERSION'),
@@ -190,7 +190,7 @@ export class XrayInstallerService implements OnModuleInit {
 
   private platformAssetName(): string {
     const platform = process.platform;
-    const arch = process.arch; // x64 | arm64 | ia32 | arm
+    const arch = process.arch;
 
     if (platform === 'win32') {
       if (arch === 'arm64') return 'Xray-windows-arm64-v8a.zip';
@@ -201,7 +201,6 @@ export class XrayInstallerService implements OnModuleInit {
       if (arch === 'arm64') return 'Xray-macos-arm64-v8a.zip';
       return 'Xray-macos-64.zip';
     }
-    // linux and others
     if (arch === 'arm64') return 'Xray-linux-arm64-v8a.zip';
     if (arch === 'arm') return 'Xray-linux-arm32-v7a.zip';
     if (arch === 'ia32') return 'Xray-linux-32.zip';
@@ -221,8 +220,6 @@ export class XrayInstallerService implements OnModuleInit {
       };
     }
 
-    // Latest release from GitHub API (includes pre-releases as "latest" may lag —
-    // we use /releases?per_page=1 for newest, else /releases/latest)
     try {
       const releases = await this.httpsJson<any[]>(
         'https://api.github.com/repos/XTLS/Xray-core/releases?per_page=5',
@@ -237,7 +234,6 @@ export class XrayInstallerService implements OnModuleInit {
       }
       return { version: release.tag_name, url: match.browser_download_url };
     } catch (err) {
-      // Fallback pinned version if API rate-limited
       const version = 'v26.6.27';
       this.logger.warn(
         `GitHub API failed (${err.message}) — falling back to ${version}`,
@@ -292,43 +288,150 @@ export class XrayInstallerService implements OnModuleInit {
     });
   }
 
+  /** Reject HTML/error pages masquerading as a zip */
+  private assertValidZip(zipPath: string): void {
+    const st = fs.statSync(zipPath);
+    if (st.size < 1_000_000) {
+      const head = fs.readFileSync(zipPath, { encoding: 'utf8' }).slice(0, 200);
+      throw new Error(
+        `Downloaded file too small (${st.size} bytes) — not a real Xray zip. Head: ${head}`,
+      );
+    }
+    const fd = fs.openSync(zipPath, 'r');
+    const magic = Buffer.alloc(4);
+    fs.readSync(fd, magic, 0, 4, 0);
+    fs.closeSync(fd);
+    // ZIP local header magic: PK\x03\x04
+    if (magic[0] !== 0x50 || magic[1] !== 0x4b) {
+      throw new Error(
+        `Downloaded file is not a ZIP (magic=${magic.toString('hex')})`,
+      );
+    }
+  }
+
   private async extractZip(zipPath: string, destDir: string): Promise<void> {
     fs.mkdirSync(destDir, { recursive: true });
 
+    // 1) Platform tools (fast path)
     if (process.platform === 'win32') {
-      // PowerShell Expand-Archive
-      await execFileAsync(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-Command',
-          `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
-        ],
-        { windowsHide: true, timeout: 120_000 },
-      );
-      return;
+      try {
+        await execFileAsync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-Command',
+            `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`,
+          ],
+          { windowsHide: true, timeout: 120_000 },
+        );
+        return;
+      } catch (err) {
+        this.logger.warn(`PowerShell Expand-Archive failed: ${err.message} — using Node unzip`);
+      }
+    } else {
+      try {
+        await execFileAsync('unzip', ['-o', zipPath, '-d', destDir], {
+          timeout: 120_000,
+        });
+        return;
+      } catch {
+        /* no unzip on many minimal servers */
+      }
+
+      // python3 zipfile module is common on Linux images
+      try {
+        await execFileAsync(
+          'python3',
+          ['-m', 'zipfile', '-e', zipPath, destDir],
+          { timeout: 120_000 },
+        );
+        return;
+      } catch {
+        /* fall through */
+      }
     }
 
-    // Prefer unzip, then bsdtar/tar
-    try {
-      await execFileAsync('unzip', ['-o', zipPath, '-d', destDir], {
-        timeout: 120_000,
-      });
-      return;
-    } catch {
-      /* try tar */
+    // 2) Pure Node — no unzip/tar dependency (GNU tar cannot open zip)
+    this.logger.log('Extracting Xray zip with built-in Node unzip…');
+    this.extractZipNode(zipPath, destDir);
+  }
+
+  /**
+   * Minimal ZIP extractor (store + deflate) using central directory.
+   * Avoids depending on system `unzip` / `tar` (GNU tar cannot open zip).
+   */
+  private extractZipNode(zipPath: string, destDir: string): void {
+    const buf = fs.readFileSync(zipPath);
+    const destRoot = path.resolve(destDir);
+
+    // Find End of Central Directory (EOCD) signature 0x06054b50
+    let eocd = -1;
+    const scanFrom = Math.max(0, buf.length - 65_536 - 22);
+    for (let i = buf.length - 22; i >= scanFrom; i--) {
+      if (buf.readUInt32LE(i) === 0x06054b50) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) {
+      throw new Error('Invalid ZIP: end-of-central-directory not found');
     }
 
-    try {
-      await execFileAsync('tar', ['-xf', zipPath, '-C', destDir], {
-        timeout: 120_000,
-      });
-      return;
-    } catch (err) {
-      throw new Error(
-        `Failed to extract Xray zip (need unzip or tar): ${err.message}`,
-      );
+    const totalEntries = buf.readUInt16LE(eocd + 10);
+    let cdOffset = buf.readUInt32LE(eocd + 16);
+    let extracted = 0;
+
+    for (let e = 0; e < totalEntries; e++) {
+      if (cdOffset + 46 > buf.length || buf.readUInt32LE(cdOffset) !== 0x02014b50) {
+        throw new Error(`Invalid ZIP: bad central directory entry at ${cdOffset}`);
+      }
+
+      const method = buf.readUInt16LE(cdOffset + 10);
+      const compSize = buf.readUInt32LE(cdOffset + 20);
+      const nameLen = buf.readUInt16LE(cdOffset + 28);
+      const extraLen = buf.readUInt16LE(cdOffset + 30);
+      const commentLen = buf.readUInt16LE(cdOffset + 32);
+      const localOff = buf.readUInt32LE(cdOffset + 42);
+      const name = buf.slice(cdOffset + 46, cdOffset + 46 + nameLen).toString('utf8');
+      cdOffset += 46 + nameLen + extraLen + commentLen;
+
+      // Zip-slip protection
+      const outPath = path.resolve(destRoot, name);
+      if (!outPath.startsWith(destRoot + path.sep) && outPath !== destRoot) {
+        throw new Error(`Refusing unsafe zip path: ${name}`);
+      }
+
+      if (name.endsWith('/')) {
+        fs.mkdirSync(outPath, { recursive: true });
+        continue;
+      }
+
+      if (localOff + 30 > buf.length || buf.readUInt32LE(localOff) !== 0x04034b50) {
+        throw new Error(`Invalid ZIP: bad local header for ${name}`);
+      }
+      const localNameLen = buf.readUInt16LE(localOff + 26);
+      const localExtraLen = buf.readUInt16LE(localOff + 28);
+      const dataStart = localOff + 30 + localNameLen + localExtraLen;
+      const compressed = buf.subarray(dataStart, dataStart + compSize);
+
+      let out: Buffer;
+      if (method === 0) {
+        out = Buffer.from(compressed);
+      } else if (method === 8) {
+        out = zlib.inflateRawSync(compressed);
+      } else {
+        throw new Error(`Unsupported ZIP compression method ${method} for ${name}`);
+      }
+
+      fs.mkdirSync(path.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, out);
+      extracted++;
     }
+
+    if (extracted === 0) {
+      throw new Error('ZIP contained no files');
+    }
+    this.logger.log(`Extracted ${extracted} file(s) from Xray zip`);
   }
 
   private httpsJson<T>(url: string): Promise<T> {
