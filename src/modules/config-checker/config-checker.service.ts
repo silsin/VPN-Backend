@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Repository } from 'typeorm';
 import * as net from 'net';
@@ -8,6 +9,10 @@ import * as https from 'https';
 import * as http from 'http';
 import { V2RayConfig, V2RayConfigType } from '../v2ray-configs/entities/v2ray-config.entity';
 import { TelegramReportService } from './telegram-report.service';
+import {
+  TrafficProbeResult,
+  XrayTrafficProbeService,
+} from './xray-traffic-probe.service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,11 +52,19 @@ export interface CheckResult {
   host: string | null;
   port: number | null;
   transport: string | null;
+  /** Final verdict — for V2Ray link/json this requires traffic smoke test when enabled */
   reachable: boolean;
+  /** Tier-1: IP/TCP/TLS/WS endpoint is up */
+  endpointReachable?: boolean;
   localLatencyMs: number | null;
   remoteNodes: NodeResult[];
   consecutiveFailures?: number;
   checkMethod?: string;
+  /** Tier-2 traffic probe summary */
+  trafficOk?: boolean | null;
+  trafficDownloadMs?: number | null;
+  trafficUploadOk?: boolean | null;
+  trafficSkipped?: boolean;
   error?: string;
 }
 
@@ -86,20 +99,40 @@ export class ConfigCheckerService {
    */
   private readonly failureCounts = new Map<string, number>();
 
+  /** Prevent overlapping cron runs (traffic probes are heavier). */
+  private isRunning = false;
+
+  /** Max parallel config checks (each may spawn one Xray process). */
+  private readonly concurrency: number;
+
   constructor(
     @InjectRepository(V2RayConfig)
     private readonly configsRepo: Repository<V2RayConfig>,
     private readonly telegram: TelegramReportService,
-  ) {}
+    private readonly trafficProbe: XrayTrafficProbeService,
+    private readonly configService: ConfigService,
+  ) {
+    const raw = this.configService.get<string>('CONFIG_TRAFFIC_CHECK_CONCURRENCY', '2');
+    this.concurrency = Math.max(1, Math.min(4, parseInt(raw || '2', 10) || 2));
+  }
 
   // ---------------------------------------------------------------------------
-  // Scheduled job — every 10 minutes
+  // Scheduled job — every 10 minutes (traffic probes make 1-min too heavy)
   // ---------------------------------------------------------------------------
 
-  @Cron('0 */1 * * * *', { name: 'config-health-check' })
+  @Cron('0 */10 * * * *', { name: 'config-health-check' })
   async scheduledCheck(): Promise<void> {
+    if (this.isRunning) {
+      this.logger.warn('⏭  Previous config health check still running — skipping this tick');
+      return;
+    }
+    this.isRunning = true;
     this.logger.log('⏱  Scheduled config health check triggered');
-    await this.checkAll(true);
+    try {
+      await this.checkAll(true);
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -108,10 +141,17 @@ export class ConfigCheckerService {
 
   async checkAll(removeUnreachable = false): Promise<BulkCheckResult> {
     const configs = await this.configsRepo.find();
-    this.logger.log(`Starting health check for ${configs.length} config(s)`);
+    this.logger.log(
+      `Starting health check for ${configs.length} config(s) ` +
+        `(concurrency=${this.concurrency}, traffic=${this.trafficProbe.isEnabled()})`,
+    );
 
-    const results = await Promise.all(configs.map((c) => this.checkConfig(c)));
-
+    // Limited concurrency — never Promise.all every config (would spawn N Xray processes)
+    const results = await this.mapWithConcurrency(
+      configs,
+      this.concurrency,
+      (c) => this.checkConfig(c),
+    );
     let removed = 0;
     let pendingRemoval = 0;
 
@@ -185,7 +225,7 @@ export class ConfigCheckerService {
   }
 
   // ---------------------------------------------------------------------------
-  // Core check — protocol-aware probe + check-host.net in parallel
+  // Core check — Tier 1 endpoint reachability, then Tier 2 traffic smoke test
   // ---------------------------------------------------------------------------
 
   async checkConfig(config: V2RayConfig): Promise<CheckResult> {
@@ -202,30 +242,113 @@ export class ConfigCheckerService {
       return {
         id: config.id, name: config.name, type: config.type,
         host: null, port: null, transport: null,
-        reachable: false, localLatencyMs: null, remoteNodes: [],
-        error: parseError,
+        reachable: false, endpointReachable: false,
+        localLatencyMs: null, remoteNodes: [],
+        trafficOk: false, error: parseError,
       };
     }
 
-    // Run protocol-aware local probe + check-host.net TCP in parallel.
-    // check-host.net only tests TCP reachability of the host:port — it is
-    // still useful for CDN configs where direct TCP from our server is blocked.
+    // ---- Tier 1: protocol-aware local probe + check-host.net TCP ----
     const [localResult, remoteNodes] = await Promise.all([
       this.protocolProbe(endpoint),
       this.checkHostNetTcp(endpoint.host, endpoint.port),
     ]);
 
     const remoteReachable = remoteNodes.some((n) => n.reachable);
-    const reachable = localResult.reachable || remoteReachable;
+    const endpointReachable = localResult.reachable || remoteReachable;
 
-    let error: string | undefined;
-    if (!reachable) {
+    if (!endpointReachable) {
       const parts: string[] = [];
       if (localResult.error) parts.push(`local(${endpoint.transport}): ${localResult.error}`);
       remoteNodes.filter((n) => n.error).forEach((n) =>
         parts.push(`${n.node.split('.')[0]}: ${n.error}`),
       );
-      error = parts.join(' | ') || 'All checks failed';
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        host: endpoint.host,
+        port: endpoint.port,
+        transport: endpoint.transport,
+        reachable: false,
+        endpointReachable: false,
+        localLatencyMs: localResult.latencyMs,
+        remoteNodes,
+        checkMethod: localResult.method,
+        trafficOk: null,
+        error: parts.join(' | ') || 'Endpoint unreachable',
+      };
+    }
+
+    // ---- Tier 2: real traffic through tunnel (V2Ray link / JSON only) ----
+    const canTraffic =
+      this.trafficProbe.isEnabled() && this.trafficProbe.supports(config);
+
+    if (!canTraffic) {
+      // OpenVPN / SSTP / SSH or traffic check disabled → endpoint success is enough
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        host: endpoint.host,
+        port: endpoint.port,
+        transport: endpoint.transport,
+        reachable: true,
+        endpointReachable: true,
+        localLatencyMs: localResult.latencyMs,
+        remoteNodes,
+        checkMethod: localResult.method,
+        trafficOk: null,
+        trafficSkipped: true,
+      };
+    }
+
+    const traffic: TrafficProbeResult = await this.trafficProbe.probe(config);
+
+    if (traffic.skipped) {
+      // Xray unavailable / unsupported — fall back to endpoint (don't false-fail all configs)
+      this.logger.warn(
+        `Traffic probe skipped for [${config.name}]: ${traffic.skipReason ?? traffic.error}`,
+      );
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        host: endpoint.host,
+        port: endpoint.port,
+        transport: endpoint.transport,
+        reachable: true,
+        endpointReachable: true,
+        localLatencyMs: localResult.latencyMs,
+        remoteNodes,
+        checkMethod: localResult.method,
+        trafficOk: null,
+        trafficSkipped: true,
+        error: traffic.skipReason ?? traffic.error,
+      };
+    }
+
+    if (!traffic.ok) {
+      this.logger.warn(
+        `Config [${config.name}] endpoint OK but traffic FAILED: ${traffic.error}`,
+      );
+      return {
+        id: config.id,
+        name: config.name,
+        type: config.type,
+        host: endpoint.host,
+        port: endpoint.port,
+        transport: endpoint.transport,
+        reachable: false,
+        endpointReachable: true,
+        localLatencyMs: localResult.latencyMs,
+        remoteNodes,
+        checkMethod: `traffic:${localResult.method}`,
+        trafficOk: false,
+        trafficDownloadMs: traffic.downloadMs,
+        trafficUploadOk: traffic.uploadOk,
+        error: traffic.error || 'Traffic smoke test failed (no upload/download)',
+      };
     }
 
     return {
@@ -235,12 +358,36 @@ export class ConfigCheckerService {
       host: endpoint.host,
       port: endpoint.port,
       transport: endpoint.transport,
-      reachable,
+      reachable: true,
+      endpointReachable: true,
       localLatencyMs: localResult.latencyMs,
       remoteNodes,
-      checkMethod: localResult.method,
-      error,
+      checkMethod: `traffic:${localResult.method}`,
+      trafficOk: true,
+      trafficDownloadMs: traffic.downloadMs,
+      trafficUploadOk: traffic.uploadOk,
     };
+  }
+
+  /** Run async work over items with a hard concurrency cap. */
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    fn: (item: T) => Promise<R>,
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) break;
+        results[i] = await fn(items[i]);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
   }
 
   // ---------------------------------------------------------------------------

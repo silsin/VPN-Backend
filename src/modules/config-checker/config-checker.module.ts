@@ -10,6 +10,8 @@ import { ConfigCheckerService } from './config-checker.service';
 import { ConfigCheckerController } from './config-checker.controller';
 import { TelegramReportService } from './telegram-report.service';
 import { TelegramAdminBotService } from './telegram-admin-bot.service';
+import { XrayTrafficProbeService } from './xray-traffic-probe.service';
+import { XrayInstallerService } from './xray-installer.service';
 
 @Module({
   imports: [
@@ -20,7 +22,13 @@ import { TelegramAdminBotService } from './telegram-admin-bot.service';
     UsersModule,
     AdsModule,
   ],
-  providers: [ConfigCheckerService, TelegramReportService, TelegramAdminBotService],
+  providers: [
+    ConfigCheckerService,
+    TelegramReportService,
+    TelegramAdminBotService,
+    XrayInstallerService,
+    XrayTrafficProbeService,
+  ],
   controllers: [ConfigCheckerController],
   exports: [ConfigCheckerService, TelegramReportService, TelegramAdminBotService],
 })

@@ -97,10 +97,21 @@ export class TelegramReportService {
     const streak = r.consecutiveFailures ?? 1;
     const streakBar = `${'🟥'.repeat(streak)}${'⬜'.repeat(Math.max(0, 5 - streak))} ${streak}/5`;
 
+    const ep = r.endpointReachable === true ? '✅' : r.endpointReachable === false ? '❌' : '?';
+    let trafficLine = '';
+    if (r.trafficOk === false) {
+      trafficLine = `    Traffic: ❌ IP up but no upload/download\n`;
+    } else if (r.trafficOk === true) {
+      trafficLine = `    Traffic: ✅ ${r.trafficDownloadMs ?? '—'}ms\n`;
+    } else if (r.trafficSkipped) {
+      trafficLine = `    Traffic: ⏭ skipped\n`;
+    }
+
     return (
       `  ▸ <b>${this.esc(r.name)}</b> [${r.type}${transport}]\n` +
       `    <code>${this.esc(endpoint)}</code>\n` +
-      `    Local: ${localStatus} | Remote: ${remoteStatus}\n` +
+      `    Endpoint: ${ep} | Local: ${localStatus} | Remote: ${remoteStatus}\n` +
+      trafficLine +
       `    Streak: ${streakBar}\n` +
       (r.error ? `    ⚠ ${this.esc(r.error.slice(0, 120))}\n` : '')
     );
@@ -117,11 +128,17 @@ export class TelegramReportService {
     const remoteMs = bestRemote
       ? `${bestRemote.latencyMs}ms (${bestRemote.node.split('.')[0]})`
       : '—';
+    const traffic =
+      r.trafficOk === true
+        ? ` traffic:${r.trafficDownloadMs ?? 'ok'}ms`
+        : r.trafficSkipped
+          ? ' traffic:skipped'
+          : '';
 
     return (
       `  ▸ <b>${this.esc(r.name)}</b>${transport} ` +
       `<code>${this.esc(endpoint)}</code> ` +
-      `local:${localMs}${method} remote:${remoteMs}`
+      `local:${localMs}${method} remote:${remoteMs}${traffic}`
     );
   }
 

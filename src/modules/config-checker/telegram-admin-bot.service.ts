@@ -968,6 +968,21 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           `ID: <code>${result.id}</code>`,
           `Endpoint: <code>${this.esc(result.host ?? '?')}:${result.port ?? '?'}</code>`,
           `Reachable: <b>${result.reachable ? 'yes' : 'no'}</b>`,
+          result.endpointReachable !== undefined
+            ? `IP/endpoint: <b>${result.endpointReachable ? 'up' : 'down'}</b>`
+            : '',
+          result.trafficOk === true
+            ? `Traffic: ✅ ${result.trafficDownloadMs ?? '—'}ms` +
+              (result.trafficUploadOk === true
+                ? ' (upload ok)'
+                : result.trafficUploadOk === false
+                  ? ' (upload fail)'
+                  : '')
+            : result.trafficOk === false
+              ? 'Traffic: ❌ no upload/download'
+              : result.trafficSkipped
+                ? 'Traffic: ⏭ skipped'
+                : '',
           result.localLatencyMs !== null
             ? `Local latency: ${result.localLatencyMs}ms (${result.checkMethod ?? '?'})`
             : '',

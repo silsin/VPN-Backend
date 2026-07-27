@@ -27,20 +27,22 @@ export class ConfigCheckerController {
   /**
    * GET /config-checker/check[?remove=true]
    *
-   * Runs a dual health check on every stored config:
-   *   1. Local TCP connect (direct from the server)
-   *   2. check-host.net TCP check (3 geographically distributed nodes)
+   * Two-tier health check on every stored config:
+   *   1. Endpoint reachability (local protocol probe + check-host.net)
+   *   2. For V2Ray link/JSON: real traffic smoke test via temporary Xray + SOCKS
+   *      (download + small upload). IP-up but no tunnel traffic → FAILED.
    *
-   * A config is considered reachable if EITHER method succeeds.
-   * Pass ?remove=true to automatically delete configs that fail both checks.
+   * A config is considered reachable only if the applicable tiers succeed.
+   * Pass ?remove=true to automatically delete configs that fail.
    */
   @Get('check')
   @ApiOperation({
-    summary: 'Check all configs — local TCP + check-host.net',
+    summary: 'Check all configs — endpoint + traffic smoke test',
     description:
-      'Runs dual health checks: local TCP connect and check-host.net distributed TCP check. ' +
-      'A config survives if either method confirms reachability. ' +
-      'Pass ?remove=true to auto-delete configs that fail both.',
+      'Tier 1: local protocol probe + check-host.net. ' +
+      'Tier 2 (v2ray_link / json_config): spawn Xray and verify download/upload through SOCKS. ' +
+      'Configs with IP up but dead tunnel are marked failed. ' +
+      'Pass ?remove=true to auto-delete failing configs after consecutive failures.',
   })
   @ApiQuery({
     name: 'remove',

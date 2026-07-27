@@ -2,6 +2,9 @@
 /dist
 /node_modules
 
+# Auto-downloaded Xray binary (config health traffic probes)
+/bin/xray/
+
 # Logs
 logs
 *.log
