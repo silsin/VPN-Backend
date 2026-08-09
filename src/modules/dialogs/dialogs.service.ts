@@ -3,12 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
-  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
 import { Dialog, DialogStatus, DialogPlacement } from './entities/dialog.entity';
 import { DialogDelivery } from './entities/dialog-delivery.entity';
 import { CreateDialogDto } from './dto/create-dialog.dto';
@@ -18,9 +15,15 @@ import { DialogButtonDto } from './dto/dialog-button.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SchedulerService } from '../notifications/scheduler.service';
 
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
 @Injectable()
 export class DialogsService {
   private readonly logger = new Logger(DialogsService.name);
+  private queryCache: Map<string, CacheEntry<Dialog[]>> = new Map();
 
   constructor(
     @InjectRepository(Dialog)
@@ -29,9 +32,25 @@ export class DialogsService {
     private readonly dialogDeliveryRepository: Repository<DialogDelivery>,
     private readonly notificationsService: NotificationsService,
     private readonly schedulerService: SchedulerService,
-    @Inject(CACHE_MANAGER)
-    private readonly cacheManager: Cache,
-  ) {}
+  ) {
+    // Clear expired cache entries every minute
+    setInterval(() => this.cleanExpiredCache(), 60000);
+  }
+
+  private cleanExpiredCache() {
+    const now = Date.now();
+    for (const [key, entry] of this.queryCache.entries()) {
+      if (entry.expiresAt < now) {
+        this.queryCache.delete(key);
+      }
+    }
+  }
+
+  private invalidateDialogCache() {
+    // Clear all dialog-related cache entries when dialogs change
+    this.queryCache.clear();
+    this.logger.debug('Dialog cache invalidated');
+  }
 
   /**
    * Create a new dialog
@@ -79,6 +98,9 @@ export class DialogsService {
     if (dialog.status === DialogStatus.SCHEDULED) {
       await this.schedulerService.scheduleDialog(savedDialog);
     }
+
+    // Invalidate cache when dialog is created
+    this.invalidateDialogCache();
 
     this.logger.log(`Created dialog ${savedDialog.id} with status ${savedDialog.status}`);
     return savedDialog;
@@ -238,6 +260,9 @@ export class DialogsService {
     if (updatedDialog.status === DialogStatus.SCHEDULED) {
       await this.schedulerService.scheduleDialog(updatedDialog);
     }
+
+    // Invalidate cache when dialog is updated
+    this.invalidateDialogCache();
 
     this.logger.log(`Updated dialog ${id}`);
     return updatedDialog;
@@ -448,11 +473,10 @@ export class DialogsService {
     // Build cache key based on parameters
     const cacheKey = `dialogs:${platform || 'all'}:${placement || 'all'}:${deviceId || 'none'}`;
     
-    // Try to get from cache first (if deviceId is provided, use shorter TTL due to device-specific filtering)
-    const cacheTTL = deviceId ? 30 : 60; // seconds
-    const cached = await this.cacheManager.get<Dialog[]>(cacheKey);
-    if (cached) {
-      return cached;
+    // Check cache first (device-agnostic: 60s, device-specific: 30s)
+    const cached = this.queryCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
     }
 
     const queryBuilder = this.dialogRepository
@@ -493,8 +517,12 @@ export class DialogsService {
       .addOrderBy('dialog.sentTime', 'DESC')
       .getMany();
 
-    // Cache the result
-    await this.cacheManager.set(cacheKey, result, cacheTTL * 1000);
+    // Cache the result (device-agnostic: 60s, device-specific: 30s)
+    const cacheTTL = deviceId ? 30 : 60;
+    this.queryCache.set(cacheKey, {
+      data: result,
+      expiresAt: Date.now() + cacheTTL * 1000,
+    });
 
     return result;
   }

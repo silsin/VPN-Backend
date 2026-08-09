@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { DialogsService } from './dialogs.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -22,6 +23,7 @@ export class MobileDialogsController {
   ) {}
 
   @Get()
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute per IP
   @ApiOperation({
     summary: 'Get active in-app dialogs for mobile devices',
   })
