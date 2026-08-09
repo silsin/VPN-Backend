@@ -955,7 +955,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
 
   private async runCheck(chatId: string, id?: string): Promise<void> {
     if (!id) {
-      await this.send(chatId, '⏳ Running health check…');
+      await this.send(chatId, '⏳ Running health check on all configs…');
     }
 
     if (id) {
@@ -968,6 +968,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           `ID: <code>${result.id}</code>`,
           `Endpoint: <code>${this.esc(result.host ?? '?')}:${result.port ?? '?'}</code>`,
           `Reachable: <b>${result.reachable ? 'yes' : 'no'}</b>`,
+          result.isIranSide ? `🇮🇷 Iran-side config` : '',
           result.endpointReachable !== undefined
             ? `IP/endpoint: <b>${result.endpointReachable ? 'up' : 'down'}</b>`
             : '',
@@ -986,6 +987,11 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           result.localLatencyMs !== null
             ? `Local latency: ${result.localLatencyMs}ms (${result.checkMethod ?? '?'})`
             : '',
+          result.remoteNodes && result.remoteNodes.length > 0
+            ? `Remote nodes:\n${result.remoteNodes
+                .map((n) => `  ${n.reachable ? '✅' : '❌'} ${n.node}: ${n.latencyMs ?? '—'}ms`)
+                .join('\n')}`
+            : '',
           result.error ? `Error: ${this.esc(result.error.slice(0, 200))}` : '',
         ]
           .filter(Boolean)
@@ -994,17 +1000,62 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Full check of all configs
     const summary = await this.checkerService.checkAll(false);
-    await this.send(
-      chatId,
-      [
-        '🩺 <b>Health Check Complete</b>',
-        `Total: ${summary.total}`,
-        `✅ Working: ${summary.working}`,
-        `❌ Failed: ${summary.failed}`,
-        `⏳ Pending removal: ${summary.pendingRemoval}`,
-      ].join('\n'),
-    );
+    
+    // Separate working and failed
+    const working = summary.results.filter((r) => r.reachable);
+    const failed = summary.results.filter((r) => !r.reachable);
+    const iranWorking = working.filter((r) => r.isIranSide);
+    const iranFailed = failed.filter((r) => r.isIranSide);
+    const globalWorking = working.filter((r) => !r.isIranSide);
+    const globalFailed = failed.filter((r) => !r.isIranSide);
+
+    let text = [
+      '🩺 <b>Health Check Complete</b>',
+      `Total: <b>${summary.total}</b> | ✅ <b>${summary.working}</b> | ❌ <b>${summary.failed}</b>`,
+      '',
+      '<b>Summary</b>',
+      `  ✅ Working: ${summary.working}`,
+      `  ❌ Failed: ${summary.failed}`,
+      summary.pendingRemoval > 0 ? `  ⏳ Pending removal: ${summary.pendingRemoval}` : '',
+      summary.removed > 0 ? `  🗑 Removed: ${summary.removed}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    // Iran-side summary
+    if (iranWorking.length > 0 || iranFailed.length > 0) {
+      text += `\n\n🇮🇷 <b>Iran-Side (${iranWorking.length + iranFailed.length})</b>`;
+      text += `\n  ✅ Working: ${iranWorking.length}`;
+      text += `\n  ❌ Failed: ${iranFailed.length}`;
+      
+      if (iranFailed.length > 0) {
+        text += '\n  Failed:';
+        for (const r of iranFailed.slice(0, 3)) {
+          text += `\n    • ${this.esc(r.name)} - ${r.error?.slice(0, 60) || 'unreachable'}`;
+        }
+        if (iranFailed.length > 3) text += `\n    ... and ${iranFailed.length - 3} more`;
+      }
+    }
+
+    // Global summary
+    if (globalWorking.length > 0 || globalFailed.length > 0) {
+      text += `\n\n🌍 <b>Global (${globalWorking.length + globalFailed.length})</b>`;
+      text += `\n  ✅ Working: ${globalWorking.length}`;
+      text += `\n  ❌ Failed: ${globalFailed.length}`;
+      
+      if (globalFailed.length > 0) {
+        text += '\n  Failed:';
+        for (const r of globalFailed.slice(0, 3)) {
+          text += `\n    • ${this.esc(r.name)} - ${r.error?.slice(0, 60) || 'unreachable'}`;
+        }
+        if (globalFailed.length > 3) text += `\n    ... and ${globalFailed.length - 3} more`;
+      }
+    }
+
+    text += '\n\nUse /list to see all configs or /check &lt;id&gt; for details.';
+    await this.send(chatId, text);
   }
 
   // ---------------------------------------------------------------------------
