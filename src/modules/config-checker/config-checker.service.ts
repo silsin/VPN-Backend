@@ -240,13 +240,16 @@ export class ConfigCheckerService {
       parseError = `Parse error: ${err.message}`;
     }
 
+    // Default isIranSide to false if column doesn't exist yet
+    const isIranSide = config.isIranSide ?? false;
+
     if (!endpoint) {
       return {
         id: config.id, name: config.name, type: config.type,
         host: null, port: null, transport: null,
         reachable: false, endpointReachable: false,
         localLatencyMs: null, remoteNodes: [],
-        isIranSide: config.isIranSide,
+        isIranSide: isIranSide,
         trafficOk: false, error: parseError,
       };
     }
@@ -254,7 +257,7 @@ export class ConfigCheckerService {
     // ---- Tier 1: protocol-aware local probe + check-host.net TCP ----
     const [localResult, remoteNodes] = await Promise.all([
       this.protocolProbe(endpoint),
-      this.checkHostNetTcp(endpoint.host, endpoint.port, config.isIranSide),
+      this.checkHostNetTcp(endpoint.host, endpoint.port, isIranSide),
     ]);
 
     const remoteReachable = remoteNodes.some((n) => n.reachable);
@@ -277,7 +280,7 @@ export class ConfigCheckerService {
         endpointReachable: false,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
-        isIranSide: config.isIranSide,
+        isIranSide: isIranSide,
         checkMethod: localResult.method,
         trafficOk: null,
         error: parts.join(' | ') || 'Endpoint unreachable',
@@ -301,7 +304,7 @@ export class ConfigCheckerService {
         endpointReachable: true,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
-        isIranSide: config.isIranSide,
+        isIranSide: isIranSide,
         checkMethod: localResult.method,
         trafficOk: null,
         trafficSkipped: true,
@@ -326,7 +329,7 @@ export class ConfigCheckerService {
         endpointReachable: true,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
-        isIranSide: config.isIranSide,
+        isIranSide: isIranSide,
         checkMethod: localResult.method,
         trafficOk: null,
         trafficSkipped: true,
@@ -349,7 +352,7 @@ export class ConfigCheckerService {
         endpointReachable: true,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
-        isIranSide: config.isIranSide,
+        isIranSide: isIranSide,
         checkMethod: `traffic:${localResult.method}`,
         trafficOk: false,
         trafficDownloadMs: traffic.downloadMs,
@@ -369,7 +372,7 @@ export class ConfigCheckerService {
       endpointReachable: true,
       localLatencyMs: localResult.latencyMs,
       remoteNodes,
-      isIranSide: config.isIranSide,
+      isIranSide: isIranSide,
       checkMethod: `traffic:${localResult.method}`,
       trafficOk: true,
       trafficDownloadMs: traffic.downloadMs,
