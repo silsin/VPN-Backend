@@ -2,337 +2,310 @@
 
 ## Problem
 
-The automatic migration for `isIranSide` column failed, leaving the column missing from the database.
-
+Error in logs:
 ```
 ERROR [ExceptionsHandler] column V2RayConfig.isIranSide does not exist
+QueryFailedError: column V2RayConfig.isIranSide does not exist
 ```
 
-## Root Cause
+This happens because migration `017_add_is_iran_side_to_configs.sql` failed to run properly.
 
-The migration file had a column name mismatch:
-- **Entity**: Uses `isIranSide` (camelCase)
-- **Migration**: Was trying to add `is_iran_side` (snake_case)
+## Why It Happens
 
-TypeORM expects the column to be named `isIranSide` in the database, not `is_iran_side`.
+There are two common reasons:
 
-## How Automatic Migrations Work
+### Reason 1: Column Name Mismatch
+- TypeORM entity defines: `isIranSide` (camelCase, stored as `"isIranSide"` in database)
+- Old migration tried to create: `is_iran_side` (snake_case)
+- Result: Column name mismatch, TypeORM can't find the column
 
-### 1. Migration System Overview
+### Reason 2: Migration Never Ran
+- The migration was added but the service wasn't initialized properly
+- Or the migration failed silently and wasn't retried
 
-```
-App Startup
-    ↓
-app.module.ts imports DatabaseMigrationModule
-    ↓
-DatabaseMigrationModule provides DatabaseMigrationService
-    ↓
-DatabaseMigrationService implements OnModuleInit
-    ↓
-OnModuleInit hook triggers → runMigrations() called
-    ↓
-Check __migrations_history table
-    ↓
-For each .sql file in database/migrations/
-    ├─ If already in history → Skip
-    └─ If NOT in history → Execute and record
-```
+## How to Fix
 
-### 2. Migration History Tracking
+### Option 1: Quick Fix (Recommended for Production)
 
-The system maintains a `__migrations_history` table:
-
-```sql
-CREATE TABLE __migrations_history (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL UNIQUE,
-  executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**Important**: Once a migration name is in this table, it won't run again (even if it failed).
-
-### 3. Why It Didn't Retry
-
-The migration 017 failed but was still recorded in `__migrations_history`, so on next startup it was skipped.
-
-## Solution 1: Fix via Backend Restart (Automatic)
-
-### Step 1: Fix the Migration File ✅ (Already Done)
-
-The file `database/migrations/017_add_is_iran_side_to_configs.sql` has been fixed to use the correct column name and include IF NOT EXISTS checks.
-
-### Step 2: Reset Migration History in Database
-
-Connect to your PostgreSQL database and run:
-
-```sql
--- Option A: Delete just the failed migration (allows retry)
-DELETE FROM "__migrations_history" 
-WHERE name = '017_add_is_iran_side_to_configs.sql';
-
--- Verify
-SELECT * FROM "__migrations_history" 
-WHERE name LIKE '017%';
-```
-
-### Step 3: Restart Backend
+**Step 1**: Connect to your production database and run the fix script:
 
 ```bash
-# Stop the backend
+psql -U your_postgres_user -d your_database_name -f database/fix_missing_column.sql
+```
+
+**What this does**:
+- ✅ Removes any incorrectly named columns
+- ✅ Creates the column with correct name: `"isIranSide"`
+- ✅ Creates the index for performance
+- ✅ Marks the migration as executed
+- ✅ Verifies everything worked
+
+### Option 2: Manual Fix (If you prefer step-by-step)
+
+Connect to your database:
+```bash
+psql -U your_postgres_user -d your_database_name
+```
+
+Run these commands one by one:
+
+```sql
+-- Check if wrong column exists
+SELECT column_name FROM information_schema.columns 
+WHERE table_name = 'v2ray_configs' AND column_name IN ('is_iran_side', 'isIranSide');
+
+-- If you see 'is_iran_side', remove it:
+ALTER TABLE v2ray_configs DROP COLUMN "is_iran_side" CASCADE;
+
+-- Add the correct column
+ALTER TABLE v2ray_configs ADD COLUMN "isIranSide" BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Create index
+CREATE INDEX idx_v2ray_configs_iran_side ON v2ray_configs("isIranSide") WHERE "isIranSide" = true;
+
+-- Mark migration as executed
+INSERT INTO "__migrations_history" (name) VALUES ('017_add_is_iran_side_to_configs.sql')
+ON CONFLICT (name) DO NOTHING;
+
+-- Verify it worked
+SELECT column_name, data_type FROM information_schema.columns 
+WHERE table_name = 'v2ray_configs' AND column_name = 'isIranSide';
+```
+
+### Option 3: Fresh Database (Development Only)
+
+If you're on a development database and can rebuild it:
+
+```bash
+# 1. Drop the database
+psql -U postgres -c "DROP DATABASE your_db_name;"
+
+# 2. Create new database
+psql -U postgres -c "CREATE DATABASE your_db_name;"
+
+# 3. Rebuild it from schema
+psql -U postgres -d your_db_name -f database/schema.sql
+
+# 4. Restart backend (migrations will run automatically)
+npm run start:dev
+```
+
+## Verification After Fix
+
+### Check 1: Column Exists
+
+```bash
+psql -U your_user -d your_db -c "
+  SELECT column_name, data_type, is_nullable 
+  FROM information_schema.columns 
+  WHERE table_name = 'v2ray_configs' AND column_name = 'isIranSide';
+"
+```
+
+Expected output:
+```
+ column_name | data_type | is_nullable
+─────────────┼───────────┼─────────────
+ isIranSide  | boolean   | f
+```
+
+### Check 2: Migration Marked as Executed
+
+```bash
+psql -U your_user -d your_db -c "
+  SELECT name, executed_at 
+  FROM __migrations_history 
+  WHERE name = '017_add_is_iran_side_to_configs.sql';
+"
+```
+
+Expected output:
+```
+                name                 |         executed_at
+──────────────────────────────────────┼─────────────────────────────────
+ 017_add_is_iran_side_to_configs.sql  | 2026-08-09 05:48:00.123456+00
+```
+
+### Check 3: Index Exists
+
+```bash
+psql -U your_user -d your_db -c "
+  SELECT indexname 
+  FROM pg_indexes 
+  WHERE tablename = 'v2ray_configs' AND indexname LIKE '%iran_side%';
+"
+```
+
+Expected output:
+```
+          indexname
+──────────────────────────────────
+ idx_v2ray_configs_iran_side
+```
+
+### Check 4: Query Works
+
+```bash
+psql -U your_user -d your_db -c "
+  SELECT id, name, 'isIranSide' as col, \"isIranSide\" as value 
+  FROM v2ray_configs 
+  LIMIT 1;
+"
+```
+
+Should return results without errors.
+
+## Restart Backend
+
+After running the fix:
+
+```bash
+# Stop the current process
 pm2 stop vpn-backend
 
-# Wait 2 seconds
-sleep 2
+# Clear the logs (optional)
+pm2 flush vpn-backend
 
-# Start the backend
+# Start again
 pm2 start vpn-backend
 
-# Watch logs
+# Watch the logs
 pm2 logs vpn-backend
 ```
 
-**Expected Log Output**:
+You should see:
 ```
-[Nest] ... - ... LOG [DatabaseMigrationService] Starting automatic database migrations...
-[Nest] ... - ... LOG [DatabaseMigrationService] Found 18 migration files.
-[Nest] ... - ... LOG [DatabaseMigrationService] Executing migration: 017_add_is_iran_side_to_configs.sql
-[Nest] ... - ... LOG [DatabaseMigrationService] Successfully executed: 017_add_is_iran_side_to_configs.sql
-[Nest] ... - ... LOG [DatabaseMigrationService] Database migrations completed successfully.
-```
-
----
-
-## Solution 2: Fix Manually via SQL (If Automatic Fails)
-
-If the backend doesn't apply the migration automatically, run this:
-
-```bash
-psql -U your_postgres_user -d your_database_name < database/fix_missing_column.sql
+[Nest] Starting NestApplication...
+[DatabaseMigrationService] Starting automatic database migrations...
+[DatabaseMigrationService] Found N migration files.
+[DatabaseMigrationService] Database migrations completed successfully.
+[Nest] Application started on port 3000
 ```
 
-Or connect to the database directly:
+## Why Automatic Migration Sometimes Fails
 
-```bash
-psql -U postgres
-\c your_database_name
+The `DatabaseMigrationService` runs on module init, but can fail if:
 
--- Then paste the contents of database/fix_missing_column.sql
+1. **Database connection not ready** - Timing issue with TypeORM initialization
+2. **Syntax error in migration file** - The SQL is invalid
+3. **Previous transaction not committed** - Database lock
+4. **Missing permissions** - User doesn't have ALTER TABLE permission
+5. **Column already partially created** - Previous failed migration left the table in bad state
+
+## How the Migration System Works
+
+```
+When backend starts:
+  ↓
+TypeOrmModule initializes
+  ↓
+DatabaseMigrationModule loads
+  ↓
+DatabaseMigrationService.onModuleInit() runs
+  ↓
+Checks __migrations_history table
+  ↓
+For each .sql file in database/migrations/:
+  ↓
+  ├─ If NOT in history: Execute the SQL
+  ├─ If succeeds: Insert into history
+  └─ If fails: Log error, continue (or stop if critical)
+  ↓
+Backend continues starting
 ```
 
-The fix script does:
-1. Checks if column exists
-2. Adds column if missing
-3. Creates index
-4. Marks migration as complete
+## Preventing Future Migration Issues
 
----
+### 1. Use Idempotent Migrations
 
-## Solution 3: Full Database Reset (Nuclear Option)
-
-Only if the above doesn't work:
+Always use `IF NOT EXISTS` or `DO $$ BEGIN ... END $$` blocks:
 
 ```sql
--- Step 1: Check if column exists
-SELECT column_name 
-FROM information_schema.columns 
-WHERE table_name = 'v2ray_configs' AND column_name = 'isIranSide';
+-- Good: Won't fail if column exists
+ALTER TABLE v2ray_configs ADD COLUMN "isIranSide" BOOLEAN NOT NULL DEFAULT FALSE;
+-- BAD ❌
 
--- Step 2: Add if missing
-ALTER TABLE v2ray_configs 
-ADD COLUMN "isIranSide" BOOLEAN NOT NULL DEFAULT FALSE;
-
--- Step 3: Create index
-CREATE INDEX IF NOT EXISTS idx_v2ray_configs_is_iran_side 
-ON v2ray_configs("isIranSide");
-
--- Step 4: Clear migration history and let it re-run
-DELETE FROM "__migrations_history" 
-WHERE name = '017_add_is_iran_side_to_configs.sql';
-
--- Step 5: Verify
-SELECT * FROM "__migrations_history" ORDER BY executed_at DESC LIMIT 5;
-```
-
----
-
-## Verification Steps
-
-After applying the fix, verify the column exists:
-
-```bash
-# Connect to database
-psql -U postgres -d your_database_name
-
-# Check if column exists and has correct type
-SELECT column_name, data_type, is_nullable, column_default
-FROM information_schema.columns
-WHERE table_name = 'v2ray_configs' AND column_name = 'isIranSide';
-
-# Should output:
-# column_name  | data_type | is_nullable | column_default
-# isIranSide   | boolean   | NO          | false
-```
-
-Check the migration was recorded:
-
-```sql
-SELECT name, executed_at 
-FROM "__migrations_history" 
-WHERE name = '017_add_is_iran_side_to_configs.sql';
-```
-
-Test that the backend can query v2ray configs:
-
-```bash
-curl http://localhost:3000/v2ray-configs
-
-# Should return 200 with list of configs
-```
-
----
-
-## Why Migrations Should Run Automatically
-
-### Architecture
-
-```typescript
-@Injectable()
-export class DatabaseMigrationService implements OnModuleInit {
-  async onModuleInit() {
-    await this.runMigrations();  // ← Runs on app startup
-  }
-
-  private async runMigrations() {
-    // 1. Create tracking table if doesn't exist
-    // 2. Read .sql files from database/migrations/
-    // 3. For each file:
-    //    - Check if already in history
-    //    - If new: Execute SQL + record in history
-    //    - If already executed: Skip
-  }
-}
-```
-
-### Startup Order
-
-```
-1. TypeOrmModule initializes
-   ↓
-2. DatabaseMigrationModule initializes
-   ↓
-3. DatabaseMigrationService.onModuleInit() called
-   ↓
-4. Migrations execute automatically
-   ↓
-5. Rest of app starts
-```
-
-This happens **automatically** every time you start the backend.
-
-### What Should Be In Logs
-
-On every startup, you should see:
-
-```
-[Nest] 2304730 - 08/09/2026, 5:39:00 AM   LOG [DatabaseMigrationService] Starting automatic database migrations...
-[Nest] 2304730 - 08/09/2026, 5:39:00 AM   LOG [DatabaseMigrationService] Found 18 migration files.
-[Nest] 2304730 - 08/09/2026, 5:39:00 AM   LOG [DatabaseMigrationService] Successfully executed: 017_add_is_iran_side_to_configs.sql
-[Nest] 2304730 - 08/09/2026, 5:39:01 AM   LOG [DatabaseMigrationService] Database migrations completed successfully.
-```
-
-If you see "Successfully executed" for 017, the column is now in the database.
-
----
-
-## Prevention: Making Migrations Idempotent
-
-All future migrations should use `DO $$ IF NOT EXISTS $$` pattern:
-
-**Bad (fails if column already exists)**:
-```sql
-ALTER TABLE table_name ADD COLUMN column_name TYPE;
-```
-
-**Good (safe to run multiple times)**:
-```sql
+-- Good: Idempotent
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_name = 'table_name' AND column_name = 'column_name'
-  ) THEN
-    ALTER TABLE table_name ADD COLUMN column_name TYPE;
+  IF NOT EXISTS (...) THEN
+    ALTER TABLE ...
   END IF;
 END $$;
+-- GOOD ✅
 ```
 
-The fixed migration 017 now uses this pattern.
-
----
-
-## Quick Fix Steps Summary
-
-### If Backend Is Running:
+### 2. Test Migrations Locally First
 
 ```bash
-# 1. SSH to server
-ssh user@your-server
+# Create test database
+createdb test_vpn
 
-# 2. Connect to database and reset migration history
-psql -U postgres -d your_db -c \
-  "DELETE FROM \"__migrations_history\" WHERE name = '017_add_is_iran_side_to_configs.sql';"
+# Run migrations manually
+psql -U postgres -d test_vpn -f database/schema.sql
+for file in database/migrations/*.sql; do
+  echo "Running $file..."
+  psql -U postgres -d test_vpn -f "$file" || echo "FAILED: $file"
+done
 
-# 3. Restart backend
-pm2 restart vpn-backend
+# Verify it worked
+psql -U postgres -d test_vpn -c "SELECT * FROM information_schema.tables WHERE table_name = 'v2ray_configs';"
 
-# 4. Check logs
-pm2 logs vpn-backend | grep "017\|Successfully"
+# Clean up
+dropdb test_vpn
 ```
 
-### If Backend Is Down:
+### 3. Always Backup Before Applying
 
 ```bash
-# 1. Connect directly to database
-psql -U postgres -d your_db
+# Backup production database
+pg_dump -U your_user -d your_db > backup_$(date +%Y%m%d_%H%M%S).sql
 
-# 2. Run fix script
-\i database/fix_missing_column.sql
-
-# 3. Exit and start backend
-exit
-pm2 start vpn-backend
+# Then apply fixes
 ```
 
----
+## Emergency Rollback
 
-## Expected Result
+If something goes wrong after applying the fix:
 
-After applying the fix:
+```bash
+# Restore from backup
+psql -U your_user -d your_db < backup_20260809_054000.sql
 
-1. ✅ Column `isIranSide` exists in `v2ray_configs` table
-2. ✅ Index `idx_v2ray_configs_is_iran_side` exists
-3. ✅ Migration 017 is marked as complete in `__migrations_history`
-4. ✅ No more "column does not exist" errors
-5. ✅ Backend starts without errors
-6. ✅ All V2RayConfig queries work normally
+# Or manually remove the column
+psql -U your_user -d your_db -c "ALTER TABLE v2ray_configs DROP COLUMN \"isIranSide\" CASCADE;"
+```
 
----
+## Contact Support
 
-## Migration Best Practices Going Forward
+If the fix doesn't work:
 
-1. **Always use IF NOT EXISTS** in DDL statements
-2. **Test migrations** on staging before production
-3. **Never delete migrations** - only add new ones
-4. **Use transactions** - migrations auto-roll back on error
-5. **Monitor logs** on startup to verify migrations ran
-6. **Keep migration history** - don't clear `__migrations_history` without reason
+1. **Run the verification checks above** and provide output
+2. **Share the backend logs** (last 30 lines)
+3. **Share database info** (PostgreSQL version, database name)
+4. **Try Option 3** (fresh database on development) to verify it's not data corruption
 
 ---
 
 ## Files Involved
 
-- `src/modules/database-migration/database-migration.service.ts` - The runner
-- `src/modules/database-migration/database-migration.module.ts` - The module
-- `src/app.module.ts` - Imports the module
-- `database/migrations/017_add_is_iran_side_to_configs.sql` - The fixed migration
-- `database/fix_missing_column.sql` - Manual fix script
+```
+database/
+  ├─ migrations/
+  │   └─ 017_add_is_iran_side_to_configs.sql    ← Updated with correct syntax
+  └─ fix_missing_column.sql                     ← Emergency fix script
+
+src/modules/
+  ├─ database-migration/
+  │   ├─ database-migration.module.ts           ← Runs on startup
+  │   └─ database-migration.service.ts          ← Executes migrations
+  └─ v2ray-configs/
+      └─ entities/v2ray-config.entity.ts        ← Defines isIranSide column
+```
+
+## Status
+
+- **Migration file**: ✅ Fixed (proper column naming and syntax)
+- **Fix script**: ✅ Ready to run
+- **Documentation**: ✅ Complete
+
+Next step: Run the fix script on your production database!

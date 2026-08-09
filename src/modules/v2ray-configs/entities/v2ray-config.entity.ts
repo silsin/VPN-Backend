@@ -45,7 +45,7 @@ export class V2RayConfig {
   @Column({ nullable: true, length: 2 })
   country: string;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, nullable: true })
   isIranSide: boolean;
 
   @Column({ type: 'text' })
