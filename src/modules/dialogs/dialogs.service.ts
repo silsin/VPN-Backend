@@ -3,9 +3,12 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { Dialog, DialogStatus, DialogPlacement } from './entities/dialog.entity';
 import { DialogDelivery } from './entities/dialog-delivery.entity';
 import { CreateDialogDto } from './dto/create-dialog.dto';
@@ -26,6 +29,8 @@ export class DialogsService {
     private readonly dialogDeliveryRepository: Repository<DialogDelivery>,
     private readonly notificationsService: NotificationsService,
     private readonly schedulerService: SchedulerService,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
   /**
@@ -440,6 +445,16 @@ export class DialogsService {
     placement?: string,
     deviceId?: string,
   ): Promise<Dialog[]> {
+    // Build cache key based on parameters
+    const cacheKey = `dialogs:${platform || 'all'}:${placement || 'all'}:${deviceId || 'none'}`;
+    
+    // Try to get from cache first (if deviceId is provided, use shorter TTL due to device-specific filtering)
+    const cacheTTL = deviceId ? 30 : 60; // seconds
+    const cached = await this.cacheManager.get<Dialog[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const queryBuilder = this.dialogRepository
       .createQueryBuilder('dialog')
       .where('dialog.status = :status', { status: DialogStatus.SENT })
@@ -473,10 +488,15 @@ export class DialogsService {
       );
     }
 
-    return queryBuilder
+    const result = await queryBuilder
       .orderBy('dialog.priority', 'DESC')
       .addOrderBy('dialog.sentTime', 'DESC')
       .getMany();
+
+    // Cache the result
+    await this.cacheManager.set(cacheKey, result, cacheTTL * 1000);
+
+    return result;
   }
 
   /**
