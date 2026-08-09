@@ -1,5 +1,7 @@
--- Add isIranSide flag to v2ray_configs for Iran-specific health checks
--- Check if column already exists before adding
+-- Migration: Add isIranSide flag to v2ray_configs table
+-- This column is used to identify Iran-side VPN configs for special handling
+
+-- Step 1: Add the column with correct naming (camelCase as per TypeORM convention)
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns 
@@ -9,5 +11,5 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Create index for faster filtering of Iran-side configs (if not exists)
-CREATE INDEX IF NOT EXISTS idx_v2ray_configs_is_iran_side ON v2ray_configs("isIranSide");
+-- Step 2: Create index for faster filtering of Iran-side configs
+CREATE INDEX IF NOT EXISTS idx_v2ray_configs_iran_side ON v2ray_configs("isIranSide") WHERE "isIranSide" = true;
