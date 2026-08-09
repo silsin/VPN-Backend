@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString, MinLength, IsOptional, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { V2RayConfigType, V2RayConfigCategory } from '../entities/v2ray-config.entity';
 
@@ -21,6 +21,11 @@ export class CreateV2RayConfigDto {
   @IsString()
   @IsOptional()
   country?: string;
+
+  @ApiProperty({ example: true, required: false, description: 'Mark as Iran-side config for Iran-specific testing' })
+  @IsBoolean()
+  @IsOptional()
+  isIranSide?: boolean;
 
   @ApiProperty({ example: 'vless://...' })
   @IsString()

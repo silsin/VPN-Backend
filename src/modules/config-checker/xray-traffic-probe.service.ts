@@ -400,7 +400,8 @@ export class XrayTrafficProbeService implements OnModuleDestroy {
     const id = String(j.id || '');
     if (!host || isNaN(port) || !id) throw new Error('vmess: missing add/port/id');
 
-    const network = (j.net || j.type || 'tcp').toLowerCase();
+    // j.net is the actual network transport, j.type is obfuscation method (not network protocol)
+    const network = (j.net || 'tcp').toLowerCase();
     const security = (j.tls === 'tls' || j.security === 'tls')
       ? 'tls'
       : (j.security === 'reality' || j.tls === 'reality')
@@ -436,6 +437,7 @@ export class XrayTrafficProbeService implements OnModuleDestroy {
         sid: j.sid,
         spx: j.spx,
         serviceName: j.path || j.serviceName,
+        obfuscation: j.type, // HTTP / SRTP / UTP / WeChat obfuscation method
       }),
     };
   }
@@ -582,6 +584,7 @@ export class XrayTrafficProbeService implements OnModuleDestroy {
     spx?: string;
     serviceName?: string;
     mode?: string;
+    obfuscation?: string;
   }): Record<string, any> {
     const network = opts.network === 'websocket' ? 'ws' : opts.network;
     const stream: Record<string, any> = {
@@ -605,7 +608,25 @@ export class XrayTrafficProbeService implements OnModuleDestroy {
         host: [opts.hostHeader],
       };
     } else if (network === 'tcp') {
-      stream.tcpSettings = {};
+      // TCP with optional obfuscation (HTTP / SRTP / UTP / WeChat)
+      const tcpSettings: Record<string, any> = {};
+      if (opts.obfuscation && opts.obfuscation.toLowerCase() === 'http') {
+        tcpSettings.header = {
+          type: 'http',
+          request: {
+            version: '1.1',
+            method: 'GET',
+            path: [opts.path || '/'],
+            headers: {
+              Host: [opts.hostHeader],
+              'User-Agent': ['Mozilla/5.0'],
+              'Accept-Encoding': ['gzip, deflate'],
+              Connection: ['keep-alive'],
+            },
+          },
+        };
+      }
+      stream.tcpSettings = tcpSettings;
     }
 
     if (opts.security === 'tls') {

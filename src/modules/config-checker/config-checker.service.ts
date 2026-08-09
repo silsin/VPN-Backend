@@ -65,6 +65,8 @@ export interface CheckResult {
   trafficDownloadMs?: number | null;
   trafficUploadOk?: boolean | null;
   trafficSkipped?: boolean;
+  /** Whether this is an Iran-side config */
+  isIranSide?: boolean;
   error?: string;
 }
 
@@ -244,6 +246,7 @@ export class ConfigCheckerService {
         host: null, port: null, transport: null,
         reachable: false, endpointReachable: false,
         localLatencyMs: null, remoteNodes: [],
+        isIranSide: config.isIranSide,
         trafficOk: false, error: parseError,
       };
     }
@@ -251,7 +254,7 @@ export class ConfigCheckerService {
     // ---- Tier 1: protocol-aware local probe + check-host.net TCP ----
     const [localResult, remoteNodes] = await Promise.all([
       this.protocolProbe(endpoint),
-      this.checkHostNetTcp(endpoint.host, endpoint.port),
+      this.checkHostNetTcp(endpoint.host, endpoint.port, config.isIranSide),
     ]);
 
     const remoteReachable = remoteNodes.some((n) => n.reachable);
@@ -274,6 +277,7 @@ export class ConfigCheckerService {
         endpointReachable: false,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
+        isIranSide: config.isIranSide,
         checkMethod: localResult.method,
         trafficOk: null,
         error: parts.join(' | ') || 'Endpoint unreachable',
@@ -297,6 +301,7 @@ export class ConfigCheckerService {
         endpointReachable: true,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
+        isIranSide: config.isIranSide,
         checkMethod: localResult.method,
         trafficOk: null,
         trafficSkipped: true,
@@ -321,6 +326,7 @@ export class ConfigCheckerService {
         endpointReachable: true,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
+        isIranSide: config.isIranSide,
         checkMethod: localResult.method,
         trafficOk: null,
         trafficSkipped: true,
@@ -343,6 +349,7 @@ export class ConfigCheckerService {
         endpointReachable: true,
         localLatencyMs: localResult.latencyMs,
         remoteNodes,
+        isIranSide: config.isIranSide,
         checkMethod: `traffic:${localResult.method}`,
         trafficOk: false,
         trafficDownloadMs: traffic.downloadMs,
@@ -362,6 +369,7 @@ export class ConfigCheckerService {
       endpointReachable: true,
       localLatencyMs: localResult.latencyMs,
       remoteNodes,
+      isIranSide: config.isIranSide,
       checkMethod: `traffic:${localResult.method}`,
       trafficOk: true,
       trafficDownloadMs: traffic.downloadMs,
@@ -617,9 +625,10 @@ export class ConfigCheckerService {
 
   // ---------------------------------------------------------------------------
   // check-host.net TCP check (remote perspective)
+  // Optionally filter for Iran-specific nodes if isIranSide=true
   // ---------------------------------------------------------------------------
 
-  private async checkHostNetTcp(host: string, port: number): Promise<NodeResult[]> {
+  private async checkHostNetTcp(host: string, port: number, isIranSide = false): Promise<NodeResult[]> {
     try {
       const initUrl =
         `https://check-host.net/check-tcp` +
@@ -633,7 +642,24 @@ export class ConfigCheckerService {
       if (!initData?.request_id || !initData?.nodes) return [];
 
       const { request_id, nodes } = initData;
-      const nodeNames = Object.keys(nodes);
+      let nodeNames = Object.keys(nodes);
+
+      // For Iran-side configs, filter for nodes that are in Iran or nearby (ru, ua, tr, az)
+      if (isIranSide) {
+        nodeNames = nodeNames.filter((nodeName) => {
+          const nodeCode = nodeName.split('.')[0].toLowerCase();
+          // IR = Iran, RU = Russia (nearby), UA = Ukraine, TR = Turkey, AZ = Azerbaijan
+          return ['ir', 'ru', 'ua', 'tr', 'az'].includes(nodeCode);
+        });
+
+        if (nodeNames.length === 0) {
+          this.logger.warn(
+            `Iran-side config ${host}:${port} — no Iran/nearby nodes available from check-host.net. Using default nodes.`,
+          );
+          nodeNames = Object.keys(nodes).slice(0, this.CHECK_HOST_MAX_NODES);
+        }
+      }
+
       const resultUrl = `https://check-host.net/check-result/${request_id}`;
       const rawResults = await this.pollCheckHostResult(resultUrl, nodeNames);
 
@@ -692,7 +718,9 @@ export class ConfigCheckerService {
       const host = String(j.add || j.host || j.server || '');
       const port = parseInt(String(j.port), 10);
       if (!host || isNaN(port)) throw new Error('vmess: missing add/port');
-      const net_ = (j.net || j.type || 'tcp').toLowerCase();
+      // j.net is the actual network transport (tcp/ws/grpc/h2/kcp/quic)
+      // j.type is obfuscation method (http/srtp/utp/wechat-video) — NOT network protocol
+      const net_ = (j.net || 'tcp').toLowerCase();
       const isTls = (j.tls === 'tls' || j.tls === true || j.security === 'tls' || j.security === 'reality');
       return {
         scheme, host, port, tls: isTls,

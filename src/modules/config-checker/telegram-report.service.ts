@@ -56,28 +56,68 @@ export class TelegramReportService {
       `  • 🗑 Removed:        <b>${result.removed}</b>`,
     ];
 
-    // --- Failed configs detail ---
-    const failed = result.results.filter((r) => !r.reachable);
-    if (failed.length > 0) {
-      lines.push('', `❌ <b>Unreachable Configs (${failed.length})</b>`);
-      for (const r of failed) {
-        lines.push(this.formatFailedConfig(r));
+    // Separate Iran-side and global configs
+    const iranConfigs = result.results.filter((r) => r.isIranSide);
+    const globalConfigs = result.results.filter((r) => !r.isIranSide);
+
+    // --- Iran-side configs detail ---
+    if (iranConfigs.length > 0) {
+      const iranFailed = iranConfigs.filter((r) => !r.reachable);
+      const iranWorking = iranConfigs.filter((r) => r.reachable);
+      lines.push('', `🇮🇷 <b>Iran-Side Configs (${iranConfigs.length})</b>`);
+      lines.push(
+        `  Working: <b>${iranWorking.length}</b> | Failed: <b>${iranFailed.length}</b>`,
+      );
+
+      if (iranFailed.length > 0) {
+        lines.push(`  <b>Unreachable from Iran</b>`);
+        for (const r of iranFailed) {
+          lines.push(this.formatFailedConfig(r, true));
+        }
+      }
+
+      if (iranWorking.length > 0) {
+        lines.push(`  <b>Working from Iran</b>`);
+        for (const r of iranWorking) {
+          lines.push(this.formatWorkingConfig(r, true));
+        }
       }
     }
 
-    // --- Working configs summary (condensed) ---
-    const working = result.results.filter((r) => r.reachable);
-    if (working.length > 0) {
-      lines.push('', `✅ <b>Working Configs (${working.length})</b>`);
-      for (const r of working) {
-        lines.push(this.formatWorkingConfig(r));
+    // --- Global configs detail ---
+    if (globalConfigs.length > 0) {
+      const globalFailed = globalConfigs.filter((r) => !r.reachable);
+      const globalWorking = globalConfigs.filter((r) => r.reachable);
+      lines.push('', `🌍 <b>Global Configs (${globalConfigs.length})</b>`);
+      lines.push(
+        `  Working: <b>${globalWorking.length}</b> | Failed: <b>${globalFailed.length}</b>`,
+      );
+
+      if (globalFailed.length > 0) {
+        lines.push(`  <b>Unreachable</b>`);
+        for (const r of globalFailed.slice(0, 5)) {
+          lines.push(this.formatFailedConfig(r));
+        }
+        if (globalFailed.length > 5) {
+          lines.push(`  ... and ${globalFailed.length - 5} more`);
+        }
+      }
+
+      if (globalWorking.length > 0) {
+        lines.push(`  <b>Working</b>`);
+        for (const r of globalWorking.slice(0, 5)) {
+          lines.push(this.formatWorkingConfig(r));
+        }
+        if (globalWorking.length > 5) {
+          lines.push(`  ... and ${globalWorking.length - 5} more`);
+        }
       }
     }
 
     return lines.join('\n');
   }
 
-  private formatFailedConfig(r: CheckResult): string {
+  private formatFailedConfig(r: CheckResult, isIranSide = false): string {
     const endpoint = r.host ? `${r.host}:${r.port}` : 'unknown endpoint';
     const transport = r.transport ? ` [${r.transport}]` : '';
     const localStatus = r.localLatencyMs !== null
@@ -107,17 +147,19 @@ export class TelegramReportService {
       trafficLine = `    Traffic: ⏭ skipped\n`;
     }
 
+    const testType = isIranSide ? '(Iran nodes)' : '(global nodes)';
+
     return (
       `  ▸ <b>${this.esc(r.name)}</b> [${r.type}${transport}]\n` +
       `    <code>${this.esc(endpoint)}</code>\n` +
-      `    Endpoint: ${ep} | Local: ${localStatus} | Remote: ${remoteStatus}\n` +
+      `    Endpoint: ${ep} | Local: ${localStatus} | Remote: ${remoteStatus} ${testType}\n` +
       trafficLine +
       `    Streak: ${streakBar}\n` +
-      (r.error ? `    ⚠ ${this.esc(r.error.slice(0, 120))}\n` : '')
+      (r.error ? `    ⚠ ${this.esc(r.error.slice(0, 100))}\n` : '')
     );
   }
 
-  private formatWorkingConfig(r: CheckResult): string {
+  private formatWorkingConfig(r: CheckResult, isIranSide = false): string {
     const endpoint = r.host ? `${r.host}:${r.port}` : '?';
     const transport = r.transport ? ` ${r.transport}` : '';
     const localMs = r.localLatencyMs !== null ? `${r.localLatencyMs}ms` : '—';
@@ -135,8 +177,10 @@ export class TelegramReportService {
           ? ' traffic:skipped'
           : '';
 
+    const testType = isIranSide ? '🇮🇷' : '🌍';
+
     return (
-      `  ▸ <b>${this.esc(r.name)}</b>${transport} ` +
+      `  ▸ ${testType} <b>${this.esc(r.name)}</b>${transport} ` +
       `<code>${this.esc(endpoint)}</code> ` +
       `local:${localMs}${method} remote:${remoteMs}${traffic}`
     );

@@ -87,10 +87,14 @@ CREATE TABLE v2ray_configs (
     name VARCHAR(255) NOT NULL UNIQUE,
     type v2ray_config_type NOT NULL DEFAULT 'v2ray_link',
     category v2ray_config_category NOT NULL DEFAULT 'main',
+    country VARCHAR(2),
+    is_iran_side BOOLEAN NOT NULL DEFAULT false,
     content TEXT NOT NULL,
     "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_v2ray_configs_is_iran_side ON v2ray_configs(is_iran_side);
 
 -- Ads Table
 CREATE TABLE ads (
