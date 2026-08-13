@@ -7,20 +7,16 @@ import {
   Param,
   Delete,
   Query,
-  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { AdsService } from './ads.service';
 import { CreateAdDto } from './dto/create-ad.dto';
 import { UpdateAdDto } from './dto/update-ad.dto';
 import { UpdateAdSettingDto } from './dto/update-ad-setting.dto';
 import { AdFailureReason } from './entities/ad-failure-report.entity';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Ads')
 @Controller('ads')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
 export class AdsController {
   constructor(private readonly adsService: AdsService) {}
 
