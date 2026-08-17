@@ -109,7 +109,7 @@ export class SubscriptionTelegramController {
     }
 
     if (!chatId || !messageId) {
-      await this.keyboardService.answerCallbackQuery(query.id);
+      await this.keyboardService.answerCallbackQuery(query.id, 'OK');
       return;
     }
 

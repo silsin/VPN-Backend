@@ -15,10 +15,7 @@ import { NotificationService } from './services/notification.service';
 import { SubscriptionJobService } from './services/subscription-job.service';
 import { GooglePlayBillingService } from './services/google-play-billing.service';
 
-// Telegram Services
-import { SubscriptionTelegramKeyboardService } from './telegram/subscription-telegram-keyboard.service';
-import { SubscriptionTelegramHandlerService } from './telegram/subscription-telegram-handler.service';
-import { SubscriptionAdminCommandsService } from './telegram/subscription-admin-commands.service';
+// Telegram Module
 import { SubscriptionTelegramModule } from './telegram/subscription-telegram.module';
 
 // Entities
