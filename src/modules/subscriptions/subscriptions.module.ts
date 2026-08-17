@@ -82,6 +82,7 @@ import { UsersModule } from '../users/users.module';
     FeatureAccessGuard,
     DeviceLimitGuard,
     GooglePlayBillingService,
+    SubscriptionTelegramModule,
   ],
 })
 export class SubscriptionsModule implements OnModuleInit {

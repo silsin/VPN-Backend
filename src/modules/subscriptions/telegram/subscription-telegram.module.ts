@@ -46,6 +46,10 @@ import { UsersModule } from '../../users/users.module';
     SubscriptionTelegramHandlerService,
   ],
   exports: [
+    SubscriptionsService,
+    UsageService,
+    PaymentService,
+    GooglePlayBillingService,
     SubscriptionAdminCommandsService,
     SubscriptionTelegramKeyboardService,
     SubscriptionTelegramHandlerService,
