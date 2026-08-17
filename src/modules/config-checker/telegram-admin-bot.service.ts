@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
   Optional,
+  Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as https from 'https';
@@ -13,6 +14,7 @@ import {
 } from '../v2ray-configs/entities/v2ray-config.entity';
 import { V2RayConfigsService } from '../v2ray-configs/v2ray-configs.service';
 import { ConfigCheckerService } from './config-checker.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { DialogsService } from '../dialogs/dialogs.service';
 import {
   Dialog,
