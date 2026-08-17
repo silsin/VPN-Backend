@@ -13,6 +13,7 @@ import { SubscriptionsService } from '../services/subscriptions.service';
 import { UsageService } from '../services/usage.service';
 import { PaymentService } from '../services/payment.service';
 import { GooglePlayBillingService } from '../services/google-play-billing.service';
+import { UsersModule } from '../../users/users.module';
 
 /**
  * Telegram integration for subscription system
@@ -21,8 +22,7 @@ import { GooglePlayBillingService } from '../services/google-play-billing.servic
  * - Interactive keyboard interface with inline buttons
  * - Callback query handlers for button clicks
  *
- * Note: This module does NOT import SubscriptionsModule to avoid circular dependencies.
- * Instead, it directly imports required entities and services.
+ * Note: This module imports UsersModule to provide UsersService dependency.
  */
 @Module({
   imports: [
@@ -33,6 +33,7 @@ import { GooglePlayBillingService } from '../services/google-play-billing.servic
       SubscriptionHistory,
       UsageTracking,
     ]),
+    UsersModule,
   ],
   controllers: [SubscriptionTelegramController],
   providers: [
