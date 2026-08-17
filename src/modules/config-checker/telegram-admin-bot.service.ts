@@ -135,7 +135,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     private readonly usersService: UsersService,
     private readonly adsService: AdsService,
     @Optional() private readonly subscriptionHandler?: SubscriptionTelegramHandlerService,
-    @Optional() private readonly subscriptionsService?: any,
+    private readonly subscriptionsService?: any,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
@@ -690,6 +690,10 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     this.pendingPlanCreates.delete(chatId);
 
     try {
+      if (!this.subscriptionsService) {
+        throw new Error('Subscriptions service not available');
+      }
+
       if (!pending.name || !pending.price || !pending.dataLimitGb || !pending.renewalPeriod) {
         throw new Error('Invalid plan data');
       }
