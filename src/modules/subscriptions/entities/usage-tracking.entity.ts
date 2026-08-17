@@ -13,7 +13,6 @@ import { User } from '../../users/entities/user.entity';
 @Entity('usage_tracking')
 @Index(['userId'])
 @Index(['userId', 'cycleStartDate', 'cycleEndDate'])
-@Index(['userId'], { where: `"cycleEndDate" > CURRENT_TIMESTAMP` })
 @Index(['userId'], { where: `"isLimitExceeded" = true` })
 @Index(['cycleStartDate'])
 export class UsageTracking {
