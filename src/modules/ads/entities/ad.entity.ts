@@ -33,7 +33,7 @@ export class Ad {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ nullable: false })
+  @Column({ nullable: true })
   name: string;
 
   @Column({
