@@ -1,4 +1,4 @@
-import { Processor } from '@nestjs/bullmq';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { SubscriptionJobService } from '../services/subscription-job.service';
@@ -8,15 +8,47 @@ import { SubscriptionJobService } from '../services/subscription-job.service';
  * Processes jobs from the 'subscription-jobs' queue
  */
 @Processor('subscription-jobs')
-export class SubscriptionProcessor {
+export class SubscriptionProcessor extends WorkerHost {
   private logger = new Logger(SubscriptionProcessor.name);
 
-  constructor(private subscriptionJobService: SubscriptionJobService) {}
+  constructor(private subscriptionJobService: SubscriptionJobService) {
+    super();
+  }
+
+  /**
+   * Process job - main handler for all jobs in the queue
+   */
+  async process(job: Job<any, any, string>): Promise<any> {
+    try {
+      this.logger.log(`Processing job: ${job.name}`);
+
+      switch (job.name) {
+        case 'check-expiring':
+          return await this.checkExpiring(job);
+        case 'process-renewals':
+          return await this.processRenewals(job);
+        case 'suspend-expired':
+          return await this.suspendExpired(job);
+        case 'reset-usage':
+          return await this.resetUsage(job);
+        case 'send-warnings':
+          return await this.sendUsageWarnings(job);
+        case 'retry-payments':
+          return await this.retryPayments(job);
+        default:
+          this.logger.warn(`Unknown job type: ${job.name}`);
+          return { success: false, error: 'Unknown job type' };
+      }
+    } catch (error) {
+      this.logger.error(`Error processing job ${job.name}: ${error.message}`);
+      throw error;
+    }
+  }
 
   /**
    * Check expiring subscriptions
    */
-  async checkExpiring(job: Job) {
+  private async checkExpiring(job: Job) {
     try {
       this.logger.log('Processing: check-expiring subscriptions');
       const result = await this.subscriptionJobService.executeCheckExpiringSubscriptions();
@@ -30,7 +62,7 @@ export class SubscriptionProcessor {
   /**
    * Process auto-renewals
    */
-  async processRenewals(job: Job) {
+  private async processRenewals(job: Job) {
     try {
       this.logger.log('Processing: auto-renewals');
       const result = await this.subscriptionJobService.executeProcessAutoRenewals();
@@ -44,7 +76,7 @@ export class SubscriptionProcessor {
   /**
    * Suspend expired subscriptions
    */
-  async suspendExpired(job: Job) {
+  private async suspendExpired(job: Job) {
     try {
       this.logger.log('Processing: suspend-expired subscriptions');
       const result = await this.subscriptionJobService.executeSuspendExpiredSubscriptions();
@@ -58,7 +90,7 @@ export class SubscriptionProcessor {
   /**
    * Reset monthly usage
    */
-  async resetUsage(job: Job) {
+  private async resetUsage(job: Job) {
     try {
       this.logger.log('Processing: reset-monthly-usage');
       const result = await this.subscriptionJobService.executeResetMonthlyUsage();
@@ -72,7 +104,7 @@ export class SubscriptionProcessor {
   /**
    * Send usage warnings
    */
-  async sendUsageWarnings(job: Job) {
+  private async sendUsageWarnings(job: Job) {
     try {
       this.logger.log('Processing: send-usage-warnings');
       const result = await this.subscriptionJobService.executeSendUsageWarnings();
@@ -86,7 +118,7 @@ export class SubscriptionProcessor {
   /**
    * Retry failed payments
    */
-  async retryPayments(job: Job) {
+  private async retryPayments(job: Job) {
     try {
       this.logger.log('Processing: retry-failed-payments');
       const result = await this.subscriptionJobService.executeRetryFailedPayments();
