@@ -12,6 +12,7 @@ import { UsageService } from '../services/usage.service';
 @Injectable()
 export class SubscriptionTelegramHandlerService {
   private readonly logger = new Logger(SubscriptionTelegramHandlerService.name);
+  private pendingActions = new Map<string, { action: string; data: any; timestamp: number }>();
 
   constructor(
     private readonly keyboardService: SubscriptionTelegramKeyboardService,
@@ -19,7 +20,17 @@ export class SubscriptionTelegramHandlerService {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly paymentService: PaymentService,
     private readonly usageService: UsageService,
-  ) {}
+  ) {
+    // Clean up old pending actions every 5 minutes (timeout after 30 mins)
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, value] of this.pendingActions.entries()) {
+        if (now - value.timestamp > 30 * 60 * 1000) {
+          this.pendingActions.delete(key);
+        }
+      }
+    }, 5 * 60 * 1000);
+  }
 
   /**
    * Handle callback query from keyboard buttons
@@ -209,29 +220,19 @@ export class SubscriptionTelegramHandlerService {
         const createText = [
           '📝 <b>Create New Plan</b>',
           '',
-          'To create a plan, use the REST API:',
-          '<code>POST /subscriptions/admin/plans</code>',
+          'Send plan details in this format:',
           '',
-          'Parameters:',
-          '• name: Plan name',
-          '• price: Price in USD',
-          '• dataLimitGb: Monthly data limit',
-          '• renewalPeriod: monthly/quarterly/annual',
-          '• description: Plan description',
-          '• isActive: true/false',
+          '<code>name|price|dataLimitGb|renewalPeriod</code>',
           '',
-          'Example JSON:',
-          '<code>{</code>',
-          '<code>"name":"Premium Monthly",</code>',
-          '<code>"price":9.99,</code>',
-          '<code>"dataLimitGb":100,</code>',
-          '<code>"renewalPeriod":"monthly"</code>',
-          '<code>}</code>',
+          'Example:',
+          '<code>Premium Monthly|9.99|100|monthly</code>',
           '',
-          'Or click below to return to plans list.',
+          'Renewal periods: monthly, quarterly, annual',
+          'Data limit in GB (e.g. 100 for 100GB)',
+          '',
+          'Reply with plan details to create.',
         ].join('\n');
         const createKeyboard = [
-          [{ text: '📋 List Plans', callback_data: 'plans:list' }],
           [{ text: '⬅️ Back', callback_data: 'menu:plans' }],
         ];
         await this.keyboardService.editMessageWithKeyboard(chatId, messageId, createText, createKeyboard);
@@ -578,9 +579,17 @@ export class SubscriptionTelegramHandlerService {
 
   private formatPlansList(plans: any[]): string {
     const lines = plans.map(
-      (p) =>
-        `${p.isActive ? '✅' : '❌'} <b>${this.keyboardService.escapeHtml(p.name)}</b> - $${p.price.toFixed(2)}\n` +
-        `   ${p.durationDays ? p.durationDays + 'd' : '∞'} • ${p.maxDevices} devices • ${p.features.join(', ')}`,
+      (p) => {
+        const durationText = p.durationDays 
+          ? p.durationDays === 30 ? 'Monthly' 
+            : p.durationDays === 90 ? 'Quarterly'
+            : p.durationDays === 365 ? 'Annual'
+            : `${p.durationDays}d`
+          : 'Lifetime';
+        
+        return `${p.isActive ? '✅' : '❌'} <b>${this.keyboardService.escapeHtml(p.name)}</b> - $${p.price.toFixed(2)}\n` +
+               `   ${durationText} • ${p.maxDevices} devices • ${p.dataLimitGb ? p.dataLimitGb + 'GB' : '∞'}`;
+      }
     );
 
     return ['💳 <b>Subscription Plans</b>', '', ...lines].join('\n');

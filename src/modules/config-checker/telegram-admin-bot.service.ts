@@ -101,6 +101,14 @@ interface PendingDialogAdd {
   draftButton?: { title?: string; isPrimary?: boolean };
 }
 
+interface PendingPlanCreate {
+  step: 'name' | 'price' | 'dataLimit' | 'renewalPeriod' | 'confirm';
+  name?: string;
+  price?: number;
+  dataLimitGb?: number;
+  renewalPeriod?: string;
+}
+
 @Injectable()
 export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramAdminBotService.name);
@@ -113,6 +121,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   private readonly pendingAdds = new Map<number, PendingAdd>();
   private readonly pendingBulk = new Map<number, PendingBulk>();
   private readonly pendingDialogAdds = new Map<number, PendingDialogAdd>();
+  private readonly pendingPlanCreates = new Map<number, PendingPlanCreate>();
   private readonly LIST_PAGE_SIZE = 5;
   private readonly DIALOG_PAGE_SIZE = 5;
   private readonly ADS_REPORT_PAGE_SIZE = 5;
@@ -233,6 +242,11 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (this.pendingPlanCreates.has(message.chat.id) && !text.startsWith('/')) {
+      await this.continuePlanCreate(message.chat.id, text);
+      return;
+    }
+
     if (this.pendingBulk.has(message.chat.id) && !text.startsWith('/')) {
       await this.completeBulkAdd(message.chat.id, text);
       return;
@@ -348,8 +362,14 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           action,
         )
       ) {
-        // Delegate to subscription handler if available
-        if (this.subscriptionHandler) {
+        // For plans:create action, start the workflow in the polling bot
+        if (action === 'plans' && payload === 'create') {
+          // We can't directly call the polling bot, so send acknowledgment and delegate to handler
+          await this.answerCallback(query.id, '✅ Creating plan');
+          await this.send(chatId, '⏳ Starting plan creation workflow...');
+          await this.startPlanCreate(chatId);
+        } else if (this.subscriptionHandler) {
+          // Delegate other subscription callbacks to handler service
           await this.subscriptionHandler.handleCallback(query.id, chatId, messageId, data);
         } else {
           await this.answerCallback(query.id, '❌ Subscription handler not available');
@@ -419,6 +439,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     this.pendingAdds.delete(chatId);
     this.pendingBulk.delete(chatId);
     this.pendingDialogAdds.delete(chatId);
+    this.pendingPlanCreates.delete(chatId);
   }
 
   private isAuthorized(userId: string): boolean {
@@ -516,6 +537,202 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     ];
 
     await this.send(chatId, text, keyboard);
+  }
+
+  private async startPlanCreate(chatId: string): Promise<void> {
+    this.pendingAdds.delete(Number(chatId));
+    this.pendingBulk.delete(Number(chatId));
+    this.pendingDialogAdds.delete(Number(chatId));
+
+    const pending: PendingPlanCreate = {
+      step: 'name',
+    };
+    this.pendingPlanCreates.set(Number(chatId), pending);
+
+    await this.send(
+      chatId,
+      [
+        '📝 <b>Create New Subscription Plan</b>',
+        '',
+        '<b>Step 1/4: Enter plan name</b>',
+        '',
+        'Examples: Premium Monthly, Basic Quarterly, Annual Plan',
+      ].join('\n'),
+    );
+  }
+
+  private async continuePlanCreate(chatId: number, text: string): Promise<void> {
+    const pending = this.pendingPlanCreates.get(chatId);
+
+    if (!pending) return;
+
+    try {
+      switch (pending.step) {
+        case 'name':
+          pending.name = text;
+          pending.step = 'price';
+          this.pendingPlanCreates.set(chatId, pending);
+          await this.send(
+            String(chatId),
+            [
+              '📝 <b>Step 2/4: Enter price in USD</b>',
+              '',
+              `Plan name: <code>${this.esc(pending.name)}</code>`,
+              '',
+              'Example: 9.99 or 19.99',
+            ].join('\n'),
+          );
+          break;
+
+        case 'price':
+          const price = parseFloat(text);
+          if (isNaN(price) || price <= 0) {
+            await this.send(
+              String(chatId),
+              `❌ Invalid price: "${text}". Send a valid number (e.g., 9.99)`,
+            );
+            return;
+          }
+          pending.price = price;
+          pending.step = 'dataLimit';
+          this.pendingPlanCreates.set(chatId, pending);
+          await this.send(
+            String(chatId),
+            [
+              '📝 <b>Step 3/4: Enter monthly data limit in GB</b>',
+              '',
+              `Plan name: <code>${this.esc(pending.name)}</code>`,
+              `Price: $${pending.price.toFixed(2)}/month`,
+              '',
+              'Example: 50 for 50GB, 100 for 100GB',
+            ].join('\n'),
+          );
+          break;
+
+        case 'dataLimit':
+          const dataLimitGb = parseInt(text, 10);
+          if (isNaN(dataLimitGb) || dataLimitGb <= 0) {
+            await this.send(
+              String(chatId),
+              `❌ Invalid data limit: "${text}". Send a valid number (e.g., 100)`,
+            );
+            return;
+          }
+          pending.dataLimitGb = dataLimitGb;
+          pending.step = 'renewalPeriod';
+          this.pendingPlanCreates.set(chatId, pending);
+          await this.send(
+            String(chatId),
+            [
+              '📝 <b>Step 4/4: Choose renewal period</b>',
+              '',
+              `Plan name: <code>${this.esc(pending.name)}</code>`,
+              `Price: $${pending.price.toFixed(2)}`,
+              `Data limit: ${pending.dataLimitGb}GB`,
+              '',
+              'Send one of: monthly, quarterly, annual',
+            ].join('\n'),
+          );
+          break;
+
+        case 'renewalPeriod':
+          const period = text.toLowerCase().trim();
+          if (!['monthly', 'quarterly', 'annual'].includes(period)) {
+            await this.send(
+              String(chatId),
+              `❌ Invalid period: "${text}". Send: monthly, quarterly, or annual`,
+            );
+            return;
+          }
+          pending.renewalPeriod = period;
+          pending.step = 'confirm';
+          this.pendingPlanCreates.set(chatId, pending);
+          await this.send(
+            String(chatId),
+            [
+              '✅ <b>Plan Summary</b>',
+              '',
+              `Name: <code>${this.esc(pending.name)}</code>`,
+              `Price: $${pending.price.toFixed(2)}`,
+              `Data Limit: ${pending.dataLimitGb}GB`,
+              `Renewal: ${period}`,
+              '',
+              'Send <code>confirm</code> to create, or <code>cancel</code> to abort.',
+            ].join('\n'),
+          );
+          break;
+
+        case 'confirm':
+          if (text.toLowerCase() === 'confirm') {
+            await this.finishPlanCreate(chatId, pending);
+          } else if (text.toLowerCase() === 'cancel') {
+            this.pendingPlanCreates.delete(chatId);
+            await this.send(String(chatId), '❌ Plan creation cancelled.');
+          } else {
+            await this.send(
+              String(chatId),
+              'Send <code>confirm</code> to create, or <code>cancel</code> to abort.',
+            );
+          }
+          break;
+      }
+    } catch (err) {
+      this.logger.error(`Error in plan create workflow: ${err.message}`);
+      await this.send(
+        String(chatId),
+        `❌ Error: ${this.esc(err.message)}`,
+      );
+    }
+  }
+
+  private async finishPlanCreate(chatId: number, pending: PendingPlanCreate): Promise<void> {
+    this.pendingPlanCreates.delete(chatId);
+
+    try {
+      if (!pending.name || !pending.price || !pending.dataLimitGb || !pending.renewalPeriod) {
+        throw new Error('Invalid plan data');
+      }
+
+      // Convert renewal period to duration days
+      const durationDaysMap = {
+        'monthly': 30,
+        'quarterly': 90,
+        'annual': 365,
+      };
+      const durationDays = durationDaysMap[pending.renewalPeriod] || 30;
+
+      const plan = await this.subscriptionsService.createPlan(
+        {
+          name: pending.name,
+          price: pending.price,
+          durationDays,
+          dataLimitGb: pending.dataLimitGb,
+          description: `${pending.name} - ${pending.renewalPeriod} plan`,
+          isActive: true,
+        },
+        'telegram-admin',
+      );
+
+      await this.send(
+        String(chatId),
+        [
+          '✅ <b>Plan Created Successfully!</b>',
+          '',
+          `ID: <code>${plan.id}</code>`,
+          `Name: <code>${this.esc(plan.name)}</code>`,
+          `Price: $${plan.price.toFixed(2)}`,
+          `Duration: ${durationDays} days`,
+          `Data Limit: ${plan.dataLimitGb}GB`,
+          `Status: ${plan.isActive ? 'Active' : 'Inactive'}`,
+        ].join('\n'),
+      );
+    } catch (err) {
+      this.logger.error(`Failed to create plan: ${err.message}`);
+      await this.send(
+        String(chatId),
+        `❌ Failed to create plan: ${this.esc(err.message)}`,
+      );
+    }
   }
 
   private async listConfigs(
