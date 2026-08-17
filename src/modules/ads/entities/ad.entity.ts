@@ -48,7 +48,7 @@ export class Ad {
   })
   platform: AdPlatform;
 
-  @Column()
+  @Column({ nullable: true })
   adUnitId: string;
 
   @Column({
