@@ -42,7 +42,14 @@ export class SubscriptionsService {
       updatedBy: adminId,
     });
 
-    return this.plansRepository.save(plan);
+    const savedPlan = await this.plansRepository.save(plan);
+    
+    // Convert price from string to number (DECIMAL type issue)
+    if (typeof savedPlan.price === 'string') {
+      savedPlan.price = parseFloat(savedPlan.price);
+    }
+    
+    return savedPlan;
   }
 
   /**
