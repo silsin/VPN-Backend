@@ -2,10 +2,10 @@ import { Entity, Column, PrimaryColumn } from 'typeorm';
 
 @Entity('ad_settings')
 export class AdSetting {
-  @PrimaryColumn()
+  @PrimaryColumn({ nullable: true })
   key: string;
 
-  @Column()
+  @Column({ nullable: true })
   value: string;
 
   @Column({ nullable: true })

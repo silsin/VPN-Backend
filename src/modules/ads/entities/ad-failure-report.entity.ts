@@ -46,6 +46,7 @@ export class AdFailureReport {
     type: 'enum',
     enum: AdFailureReason,
     default: AdFailureReason.OTHER,
+    nullable: true,
   })
   reason: AdFailureReason;
 
