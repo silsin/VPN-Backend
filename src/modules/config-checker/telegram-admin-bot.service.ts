@@ -3,6 +3,7 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as https from 'https';
@@ -24,6 +25,7 @@ import { DeviceLoginsService } from '../device-logins/device-logins.service';
 import { UsersService } from '../users/users.service';
 import { AdsService } from '../ads/ads.service';
 import { AdFailureReport } from '../ads/entities/ad-failure-report.entity';
+import { SubscriptionTelegramHandlerService } from '../subscriptions/telegram/subscription-telegram-handler.service';
 
 interface TelegramUser {
   id: number;
@@ -123,6 +125,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     private readonly deviceLoginsService: DeviceLoginsService,
     private readonly usersService: UsersService,
     private readonly adsService: AdsService,
+    @Optional() private readonly subscriptionHandler?: SubscriptionTelegramHandlerService,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
@@ -345,8 +348,12 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           action,
         )
       ) {
-        // For subscription callbacks, just acknowledge and redirect to webhook interface
-        await this.answerCallback(query.id, '📱 Processing...');
+        // Delegate to subscription handler if available
+        if (this.subscriptionHandler) {
+          await this.subscriptionHandler.handleCallback(query.id, chatId, messageId, data);
+        } else {
+          await this.answerCallback(query.id, '❌ Subscription handler not available');
+        }
         return;
       }
 
