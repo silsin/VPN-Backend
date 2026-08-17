@@ -137,7 +137,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     private readonly usersService: UsersService,
     private readonly adsService: AdsService,
     @Optional() private readonly subscriptionHandler?: SubscriptionTelegramHandlerService,
-    private readonly subscriptionsService?: any,
+    @Optional() private readonly subscriptionsService?: SubscriptionsService,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
