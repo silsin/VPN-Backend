@@ -55,7 +55,13 @@ export class SubscriptionsService {
       query.where('plan.isActive = :isActive', { isActive: true });
     }
 
-    return query.orderBy('plan.displayOrder', 'ASC').getMany();
+    const plans = await query.orderBy('plan.displayOrder', 'ASC').getMany();
+    
+    // Convert price from string to number (DECIMAL type issue)
+    return plans.map(p => ({
+      ...p,
+      price: typeof p.price === 'string' ? parseFloat(p.price) : p.price,
+    }));
   }
 
   /**
@@ -70,7 +76,10 @@ export class SubscriptionsService {
       throw new NotFoundException(`Plan with ID ${planId} not found`);
     }
 
-    return plan;
+    return {
+      ...plan,
+      price: typeof plan.price === 'string' ? parseFloat(plan.price) : plan.price,
+    };
   }
 
   /**
