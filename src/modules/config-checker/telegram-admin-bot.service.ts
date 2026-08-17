@@ -253,9 +253,6 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       case '/help':
         await this.sendHelp(chatId);
         break;
-      case '/subscriptions':
-        await this.send(chatId, '📱 Subscription management is available via keyboard menu. Use /subscriptions command or contact admin.');
-        break;
       case '/list':
         await this.listConfigs(chatId, parseInt(args[0] ?? '1', 10) || 1);
         break;

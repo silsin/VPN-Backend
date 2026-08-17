@@ -19,6 +19,7 @@ import { GooglePlayBillingService } from './services/google-play-billing.service
 import { SubscriptionTelegramKeyboardService } from './telegram/subscription-telegram-keyboard.service';
 import { SubscriptionTelegramHandlerService } from './telegram/subscription-telegram-handler.service';
 import { SubscriptionAdminCommandsService } from './telegram/subscription-admin-commands.service';
+import { SubscriptionTelegramModule } from './telegram/subscription-telegram.module';
 
 // Entities
 import { SubscriptionPlan } from './entities/subscription-plan.entity';
@@ -60,6 +61,7 @@ import { UsersModule } from '../users/users.module';
       },
     ),
     UsersModule,
+    SubscriptionTelegramModule,
   ],
   controllers: [SubscriptionsController, SubscriptionsAdminController],
   providers: [
@@ -74,9 +76,6 @@ import { UsersModule } from '../users/users.module';
     SubscriptionGuard,
     FeatureAccessGuard,
     DeviceLimitGuard,
-    SubscriptionTelegramKeyboardService,
-    SubscriptionTelegramHandlerService,
-    SubscriptionAdminCommandsService,
   ],
   exports: [
     SubscriptionsService,
@@ -86,9 +85,6 @@ import { UsersModule } from '../users/users.module';
     FeatureAccessGuard,
     DeviceLimitGuard,
     GooglePlayBillingService,
-    SubscriptionTelegramKeyboardService,
-    SubscriptionTelegramHandlerService,
-    SubscriptionAdminCommandsService,
   ],
 })
 export class SubscriptionsModule implements OnModuleInit {
