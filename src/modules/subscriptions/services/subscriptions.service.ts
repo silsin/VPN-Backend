@@ -27,7 +27,7 @@ export class SubscriptionsService {
   /**
    * Create a new subscription plan (Admin only)
    */
-  async createPlan(createPlanDto: CreatePlanDto, adminId: string): Promise<SubscriptionPlan> {
+  async createPlan(createPlanDto: CreatePlanDto, adminId: string | null): Promise<SubscriptionPlan> {
     const existingPlan = await this.plansRepository.findOne({
       where: { name: createPlanDto.name },
     });

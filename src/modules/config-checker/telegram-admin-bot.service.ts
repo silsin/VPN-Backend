@@ -719,7 +719,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           features: ['vpn_access'],
           isActive: true,
         },
-        'telegram-admin',
+        null,
       );
 
       await this.send(
