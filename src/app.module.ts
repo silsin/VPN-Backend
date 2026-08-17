@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BullModule } from '@nestjs/bullmq';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseConfig } from './config/database.config';
@@ -17,6 +18,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { HandshakeModule } from './modules/handshake/handshake.module';
 import { DatabaseMigrationModule } from './modules/database-migration/database-migration.module';
 import { ConfigCheckerModule } from './modules/config-checker/config-checker.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { WafMiddleware } from './common/middleware/waf.middleware';
 
 @Module({
@@ -35,6 +37,12 @@ import { WafMiddleware } from './common/middleware/waf.middleware';
       },
     ]),
     ScheduleModule.forRoot(),
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+      },
+    }),
     AuthModule,
     UsersModule,
     DeviceLoginsModule,
@@ -46,6 +54,7 @@ import { WafMiddleware } from './common/middleware/waf.middleware';
     HandshakeModule,
     DatabaseMigrationModule,
     ConfigCheckerModule,
+    SubscriptionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

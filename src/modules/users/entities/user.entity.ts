@@ -92,6 +92,41 @@ export class User {
   @OneToMany('DeviceLogin', 'user')
   deviceLogins: any[];
 
+  // Subscription-related columns
+  @Column({ type: 'varchar', default: 'free', nullable: true })
+  subscriptionStatus: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  currentPlanId: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  subscriptionExpiryDate: Date;
+
+  @Column({ type: 'int', default: 0 })
+  daysRemaining: number;
+
+  @Column({ type: 'bigint', default: 0 })
+  dataUsedThisMonth: number;
+
+  @Column({ type: 'bigint', nullable: true })
+  maxDataPerMonth: number;
+
+  @Column({ type: 'int', default: 1 })
+  maxConcurrentDevices: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastSubscriptionCheckAt: Date;
+
+  // Relationships
+  @OneToMany('UserSubscription', 'user')
+  subscriptions: any[];
+
+  @OneToMany('Payment', 'user')
+  payments: any[];
+
+  @OneToMany('UsageTracking', 'user')
+  usageTracking: any[];
+
   @CreateDateColumn()
   createdAt: Date;
 

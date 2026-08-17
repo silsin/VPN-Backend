@@ -24,6 +24,7 @@ import { DeviceLoginsService } from '../device-logins/device-logins.service';
 import { UsersService } from '../users/users.service';
 import { AdsService } from '../ads/ads.service';
 import { AdFailureReport } from '../ads/entities/ad-failure-report.entity';
+import { SubscriptionTelegramHandlerService } from '../subscriptions/telegram/subscription-telegram-handler.service';
 
 interface TelegramUser {
   id: number;
@@ -123,6 +124,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     private readonly deviceLoginsService: DeviceLoginsService,
     private readonly usersService: UsersService,
     private readonly adsService: AdsService,
+    private readonly subscriptionHandler?: SubscriptionTelegramHandlerService,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
@@ -253,6 +255,18 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       case '/help':
         await this.sendHelp(chatId);
         break;
+      case '/subscriptions':
+        if (this.subscriptionHandler) {
+          const keyboardService = (this.subscriptionHandler as any).keyboardService;
+          if (keyboardService) {
+            await keyboardService.sendMainMenu(chatId);
+          } else {
+            await this.send(chatId, '❌ Subscription keyboard service not available');
+          }
+        } else {
+          await this.send(chatId, '❌ Subscription module not initialized');
+        }
+        break;
       case '/list':
         await this.listConfigs(chatId, parseInt(args[0] ?? '1', 10) || 1);
         break;
@@ -312,7 +326,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         );
         break;
       default:
-        await this.send(chatId, 'Unknown command. Send /help for the command list.');
+        await this.send(chatId, 'Unknown command. Send /help to see available commands.');
     }
   }
 
@@ -336,6 +350,21 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     const payload = rest.join(':');
 
     try {
+      // Route subscription callbacks to subscription handler
+      if (
+        ['menu', 'plans', 'plan', 'users', 'user', 'payments', 'analytics', 'expiring', 'usage', 'quick', 'range'].includes(
+          action,
+        )
+      ) {
+        if (this.subscriptionHandler) {
+          await this.subscriptionHandler.handleCallback(query.id, chatId, messageId, data);
+        } else {
+          await this.answerCallback(query.id, '❌ Subscription module not initialized', true);
+        }
+        return;
+      }
+
+      // Handle existing config/dialog/ads callbacks
       switch (action) {
         case 'lst':
           await this.answerCallback(query.id);
@@ -434,6 +463,14 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '/adsreports [page] — recent ad-not-showing reports',
         '/adssummary [days] — failure counts by reason (default 7)',
         '',
+        '<b>Subscriptions</b>',
+        '/subscriptions — subscription admin keyboard menu',
+        '/subplans — list all subscription plans',
+        '/subsuser &lt;id&gt; — view user subscription details',
+        '/subsextend &lt;id&gt; &lt;days&gt; — extend user subscription',
+        '/subspayments [days] — payment statistics',
+        '/subsstats — subscription system statistics',
+        '',
         '<b>Reports</b>',
         '/sessions — login sessions summary',
         '/users — total users summary',
@@ -454,6 +491,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '<code>/dialogadd in-app all high splash repeatable</code>',
         '<code>/adsreports</code>',
         '<code>/adssummary 7</code>',
+        '<code>/subscriptions</code>',
       ].join('\n'),
     );
   }
