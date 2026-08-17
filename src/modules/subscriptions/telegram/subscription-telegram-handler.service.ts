@@ -205,6 +205,52 @@ export class SubscriptionTelegramHandlerService {
         await this.keyboardService.editMessageWithKeyboard(chatId, messageId, text, keyboard);
         break;
 
+      case 'create':
+        const createText = [
+          '📝 <b>Create New Plan</b>',
+          '',
+          'To create a plan, use the REST API:',
+          '<code>POST /subscriptions/admin/plans</code>',
+          '',
+          'Parameters:',
+          '• name: Plan name',
+          '• price: Price in USD',
+          '• dataLimitGb: Monthly data limit',
+          '• renewalPeriod: monthly/quarterly/annual',
+          '• description: Plan description',
+          '• isActive: true/false',
+          '',
+          'Example JSON:',
+          '<code>{</code>',
+          '<code>"name":"Premium Monthly",</code>',
+          '<code>"price":9.99,</code>',
+          '<code>"dataLimitGb":100,</code>',
+          '<code>"renewalPeriod":"monthly"</code>',
+          '<code>}</code>',
+          '',
+          'Or click below to return to plans list.',
+        ].join('\n');
+        const createKeyboard = [
+          [{ text: '📋 List Plans', callback_data: 'plans:list' }],
+          [{ text: '⬅️ Back', callback_data: 'menu:plans' }],
+        ];
+        await this.keyboardService.editMessageWithKeyboard(chatId, messageId, createText, createKeyboard);
+        break;
+
+      case 'search':
+        const searchText = [
+          '🔍 <b>Search Plan</b>',
+          '',
+          'Search functionality requires REST API.',
+          'Use <code>GET /subscriptions/admin/plans?search=NAME</code>',
+          '',
+          'Or select a plan from the list:',
+        ].join('\n');
+        const plansForSearch = await this.subscriptionsService.getAllPlans(false);
+        const searchKeyboard = await this.keyboardService.getPlansListKeyboard();
+        await this.keyboardService.editMessageWithKeyboard(chatId, messageId, searchText, searchKeyboard);
+        break;
+
       case 'view':
         if (planId) {
           const plan = await this.subscriptionsService.getPlanById(planId);
