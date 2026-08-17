@@ -311,6 +311,9 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           parseInt(args[0] ?? '7', 10) || 7,
         );
         break;
+      case '/subscriptions':
+        await this.sendSubscriptionMenu(chatId);
+        break;
       default:
         await this.send(chatId, 'Unknown command. Send /help to see available commands.');
     }
@@ -336,14 +339,14 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     const payload = rest.join(':');
 
     try {
-      // Subscription-related callbacks are not handled here
-      // They need to be handled by a separate service with proper DI
+      // Handle subscription-related callbacks
       if (
         ['menu', 'plans', 'plan', 'users', 'user', 'payments', 'analytics', 'expiring', 'usage', 'quick', 'range'].includes(
           action,
         )
       ) {
-        await this.answerCallback(query.id, '📱 Subscription features coming soon');
+        // For subscription callbacks, just acknowledge and redirect to webhook interface
+        await this.answerCallback(query.id, '📱 Processing...');
         return;
       }
 
@@ -477,6 +480,35 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '<code>/subscriptions</code>',
       ].join('\n'),
     );
+  }
+
+  private async sendSubscriptionMenu(chatId: string): Promise<void> {
+    const text = [
+      '🤖 <b>FlyVPN Subscription Admin</b>',
+      '',
+      'Select an action:',
+    ].join('\n');
+
+    const keyboard = [
+      [
+        { text: '💳 Manage Plans', callback_data: 'menu:plans' },
+        { text: '👥 Manage Users', callback_data: 'menu:users' },
+      ],
+      [
+        { text: '💰 Manage Payments', callback_data: 'menu:payments' },
+        { text: '📊 View Analytics', callback_data: 'menu:analytics' },
+      ],
+      [
+        { text: '⏰ Expiring Subscriptions', callback_data: 'menu:expiring' },
+        { text: '📈 Usage Statistics', callback_data: 'menu:usage' },
+      ],
+      [
+        { text: '❓ Help', callback_data: 'menu:help' },
+        { text: '🔄 Refresh', callback_data: 'menu:main' },
+      ],
+    ];
+
+    await this.send(chatId, text, keyboard);
   }
 
   private async listConfigs(
