@@ -715,6 +715,8 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
           durationDays,
           dataLimitGb: pending.dataLimitGb,
           description: `${pending.name} - ${pending.renewalPeriod} plan`,
+          maxDevices: 1,
+          features: ['vpn_access'],
           isActive: true,
         },
         'telegram-admin',
