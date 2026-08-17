@@ -20,7 +20,7 @@ export class DeviceLogin {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Column()
+  @Column({ nullable: true })
   deviceId: string;
 
   @Column({ nullable: true })
