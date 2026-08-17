@@ -15,7 +15,7 @@ export class DatabaseConfig implements TypeOrmOptionsFactory {
       password: this.configService.get<string>('DB_PASSWORD', 'gfx234789!!!@@@###'),
       database: this.configService.get<string>('DB_NAME', 'flyvpn'),
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-      synchronize: true, // Auto-sync schema from entities
+      synchronize: false, // Auto-sync schema from entities
       logging: this.configService.get<string>('NODE_ENV') === 'development',
       ssl: this.configService.get<string>('DB_SSL') === 'true' ? { rejectUnauthorized: false } : false,
     };
