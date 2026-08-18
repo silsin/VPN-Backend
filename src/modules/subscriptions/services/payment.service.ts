@@ -6,6 +6,7 @@ import { Payment, PaymentStatus, PaymentMethod } from '../entities/payment.entit
 import { SubscriptionPlan } from '../entities/subscription-plan.entity';
 import { PurchaseSubscriptionDto } from '../dto/purchase-subscription.dto';
 import Stripe from 'stripe';
+import { PayPalService } from './paypal.service';
 
 @Injectable()
 export class PaymentService {
@@ -17,6 +18,7 @@ export class PaymentService {
     @InjectRepository(SubscriptionPlan)
     private plansRepository: Repository<SubscriptionPlan>,
     private configService: ConfigService,
+    private paypalService: PayPalService,
   ) {
     const stripeKey = this.configService.get<string>('STRIPE_SECRET_KEY');
     if (stripeKey) {
@@ -123,9 +125,6 @@ export class PaymentService {
     orderId: string,
     metadata?: any,
   ): Promise<Payment> {
-    // Placeholder for PayPal integration
-    // In production, verify the order with PayPal API
-
     const plan = await this.plansRepository.findOne({ where: { id: planId } });
     if (!plan) {
       throw new NotFoundException('Plan not found');
@@ -140,10 +139,21 @@ export class PaymentService {
     );
 
     try {
-      // TODO: Verify with PayPal API
-      // For now, assume payment is successful
-      payment.transactionId = orderId;
+      // Verify with PayPal API
+      if (!this.paypalService.isConfigured()) {
+        throw new InternalServerErrorException('PayPal not configured');
+      }
+
+      const capturedOrder = await this.paypalService.captureOrder(orderId);
+
+      // Update payment with transaction ID from PayPal
+      payment.transactionId = capturedOrder.id;
       payment.status = PaymentStatus.COMPLETED;
+      payment.metadata = {
+        ...payment.metadata,
+        payerEmail: capturedOrder.payer?.email_address,
+        payerName: capturedOrder.payer?.name?.given_name,
+      };
 
       return this.paymentsRepository.save(payment);
     } catch (error) {
@@ -351,6 +361,21 @@ export class PaymentService {
         });
 
         payment.refundTransactionId = refund.id;
+        payment.refundAmount = amountToRefund;
+        payment.refundedAt = new Date();
+        payment.status = PaymentStatus.REFUNDED;
+      } else if (payment.paymentMethod === PaymentMethod.PAYPAL && payment.transactionId) {
+        // Refund via PayPal API
+        if (!this.paypalService.isConfigured()) {
+          throw new InternalServerErrorException('PayPal not configured');
+        }
+
+        const refundResult = await this.paypalService.refundPayment(
+          payment.transactionId,
+          amountToRefund,
+        );
+
+        payment.refundTransactionId = refundResult.id;
         payment.refundAmount = amountToRefund;
         payment.refundedAt = new Date();
         payment.status = PaymentStatus.REFUNDED;

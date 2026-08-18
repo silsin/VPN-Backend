@@ -645,4 +645,89 @@ export class SubscriptionsService {
       autoRenewal: sub.isAutoRenewal,
     }));
   }
+
+  // ============ SUSPENSION & REACTIVATION ============
+
+  /**
+   * Suspend a subscription (admin action)
+   */
+  async suspendSubscription(
+    userId: string,
+    reason: string,
+    adminId: string,
+  ): Promise<UserSubscription> {
+    const subscription = await this.getUserSubscription(userId);
+    if (!subscription) {
+      throw new NotFoundException('User has no subscription');
+    }
+
+    if (subscription.status === SubscriptionStatus.SUSPENDED) {
+      throw new BadRequestException('Subscription is already suspended');
+    }
+
+    subscription.status = SubscriptionStatus.SUSPENDED;
+    subscription.suspendedAt = new Date();
+    subscription.suspendedReason = reason;
+    subscription.suspendedByAdminId = adminId;
+
+    const updated = await this.userSubscriptionsRepository.save(subscription);
+
+    // Log history
+    await this.logSubscriptionHistory({
+      userId,
+      planId: subscription.planId,
+      action: SubscriptionAction.SUSPENDED,
+      startDate: subscription.startDate,
+      expiryDate: subscription.expiryDate,
+      reason: ActionReason.ADMIN_ACTION,
+      notes: reason,
+      createdByUserId: adminId,
+    });
+
+    // Update user cache - this will mark them as free tier
+    await this.updateUserSubscriptionCache(userId);
+
+    return updated;
+  }
+
+  /**
+   * Reactivate a suspended subscription
+   */
+  async reactivateSubscription(
+    userId: string,
+    adminId: string,
+  ): Promise<UserSubscription> {
+    const subscription = await this.getUserSubscription(userId);
+    if (!subscription) {
+      throw new NotFoundException('User has no subscription');
+    }
+
+    if (subscription.status !== SubscriptionStatus.SUSPENDED) {
+      throw new BadRequestException('Subscription is not suspended');
+    }
+
+    subscription.status = SubscriptionStatus.ACTIVE;
+    subscription.suspendedAt = null;
+    subscription.suspendedReason = null;
+    subscription.suspendedByAdminId = null;
+
+    const updated = await this.userSubscriptionsRepository.save(subscription);
+
+    // Log history
+    await this.logSubscriptionHistory({
+      userId,
+      planId: subscription.planId,
+      action: SubscriptionAction.REACTIVATED,
+      startDate: subscription.startDate,
+      expiryDate: subscription.expiryDate,
+      reason: ActionReason.ADMIN_ACTION,
+      notes: 'Subscription reactivated by admin',
+      createdByUserId: adminId,
+    });
+
+    // Update user cache - this will restore their subscription
+    await this.updateUserSubscriptionCache(userId);
+
+    return updated;
+  }
 }

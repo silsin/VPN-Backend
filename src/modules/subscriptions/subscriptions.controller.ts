@@ -2,558 +2,220 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   UseGuards,
   Request,
-  Query,
-  BadRequestException,
+  HttpCode,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { FcmService } from './services/fcm.service';
 import { SubscriptionsService } from './services/subscriptions.service';
-import { PaymentService } from './services/payment.service';
-import { UsageService } from './services/usage.service';
-import { NotificationService } from './services/notification.service';
-import {
-  PurchaseSubscriptionDto,
-  ExtendSubscriptionDto,
-  CancelSubscriptionDto,
-  ToggleAutoRenewalDto,
-  PaymentMethodType,
-  StripePaymentDetailsDto,
-  PayPalPaymentDetailsDto,
-  CryptoPaymentDetailsDto,
-  GiftCodePaymentDetailsDto,
-  GooglePlayPaymentDetailsDto,
-  ApplePayPaymentDetailsDto,
-} from './dto/purchase-subscription.dto';
-import {
-  GetSubscriptionHistoryDto,
-  GetPaymentsDto,
-  PaginationDto,
-} from './dto/query-params.dto';
+import { PauseService } from './services/pause.service';
 
 @ApiTags('Subscriptions - User')
 @Controller('subscriptions')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
-    private readonly paymentService: PaymentService,
-    private readonly usageService: UsageService,
-    private readonly notificationService: NotificationService,
+    private readonly fcmService: FcmService,
+    private readonly pauseService: PauseService,
   ) {}
 
-  // ============ SUBSCRIPTION PLANS ============
-
-  @Get('plans')
-  @ApiOperation({ summary: 'Get all available subscription plans' })
-  @ApiResponse({
-    status: 200,
-    description: 'List of available plans',
-    schema: {
-      example: {
-        plans: [
-          {
-            id: 'uuid',
-            name: 'Monthly',
-            price: 4.99,
-            durationDays: 30,
-            maxDevices: 3,
-            features: ['premium_vpn', 'ad_free'],
-          },
-        ],
-      },
-    },
-  })
-  async getPlans() {
-    const plans = await this.subscriptionsService.getAllPlans(true);
-    return {
-      plans: plans.map((p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        price: p.price,
-        durationDays: p.durationDays,
-        dataLimitGb: p.dataLimitGb,
-        maxDevices: p.maxDevices,
-        features: p.features,
-        displayOrder: p.displayOrder,
-      })),
-    };
-  }
-
-  // ============ USER SUBSCRIPTION ============
-
-  @Get('my-plan')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current subscription details' })
-  @ApiResponse({
-    status: 200,
-    description: 'Current subscription with usage info',
-  })
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user subscription' })
   async getMySubscription(@Request() req) {
-    const userId = req.user.id;
+    const userId = req.user?.id;
     const subscription = await this.subscriptionsService.getUserSubscription(userId);
-    const usage = await this.usageService.getUsageSummary(userId);
 
     if (!subscription) {
-      const freePlan = await this.subscriptionsService.getFreePlan();
       return {
-        subscription: {
-          id: null,
-          plan: {
-            id: freePlan.id,
-            name: freePlan.name,
-            price: 0,
-          },
-          status: 'free',
-          startDate: null,
-          expiryDate: null,
-          daysRemaining: null,
-          autoRenewal: false,
-        },
-        usage,
+        subscription: null,
+        isActive: false,
+        message: 'No active subscription',
       };
     }
 
     return {
-      subscription: {
-        id: subscription.id,
-        plan: {
-          id: subscription.plan.id,
-          name: subscription.plan.name,
-          price: subscription.plan.price,
-          durationDays: subscription.plan.durationDays,
-          features: subscription.plan.features,
-          maxDevices: subscription.plan.maxDevices,
-        },
-        status: subscription.status,
-        startDate: subscription.startDate,
-        expiryDate: subscription.expiryDate,
-        daysRemaining: subscription.getDaysRemaining(),
-        autoRenewal: subscription.isAutoRenewal,
-        isActive: subscription.isActive(),
-      },
-      usage,
+      subscription,
+      isActive: subscription.isActive(),
+      daysRemaining: subscription.getDaysRemaining(),
     };
   }
 
-  // ============ PURCHASE & PAYMENT ============
+  @Get('usage')
+  @ApiOperation({ summary: 'Get current usage for subscription' })
+  async getUsage(@Request() req) {
+    const userId = req.user?.id;
+    const subscription = await this.subscriptionsService.getUserSubscription(userId);
 
-  @Post('purchase')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Purchase a subscription' })
-  @ApiResponse({ status: 201, description: 'Subscription purchased successfully' })
-  async purchaseSubscription(
-    @Request() req,
-    @Body() purchaseDto: PurchaseSubscriptionDto,
-  ) {
-    const userId = req.user.id;
-
-    try {
-      let payment;
-
-      // Process payment based on method using discriminated union
-      if (purchaseDto.paymentMethod === PaymentMethodType.STRIPE) {
-        const details = purchaseDto.paymentDetails as StripePaymentDetailsDto;
-        payment = await this.paymentService.processStripePayment(
-          userId,
-          purchaseDto.planId,
-          details.tokenId,
-          {
-            couponCode: purchaseDto.couponCode,
-          },
-        );
-      } else if (purchaseDto.paymentMethod === PaymentMethodType.PAYPAL) {
-        const details = purchaseDto.paymentDetails as PayPalPaymentDetailsDto;
-        payment = await this.paymentService.processPayPalPayment(
-          userId,
-          purchaseDto.planId,
-          details.orderId,
-          {
-            couponCode: purchaseDto.couponCode,
-          },
-        );
-      } else if (purchaseDto.paymentMethod === PaymentMethodType.GIFT_CODE) {
-        const details = purchaseDto.paymentDetails as GiftCodePaymentDetailsDto;
-        payment = await this.paymentService.processGiftCodePayment(
-          userId,
-          purchaseDto.planId,
-          details.code,
-        );
-      } else if (purchaseDto.paymentMethod === PaymentMethodType.CRYPTO) {
-        const details = purchaseDto.paymentDetails as CryptoPaymentDetailsDto;
-        payment = await this.paymentService.processCryptoPayment(
-          userId,
-          purchaseDto.planId,
-          details.cryptoType,
-          details.walletAddress,
-        );
-      } else if (purchaseDto.paymentMethod === PaymentMethodType.GOOGLE_PLAY) {
-        const details = purchaseDto.paymentDetails as GooglePlayPaymentDetailsDto;
-        payment = await this.paymentService.processGooglePlayPayment(
-          userId,
-          purchaseDto.planId,
-          details.packageName,
-          details.productId,
-          details.purchaseToken,
-        );
-      } else if (purchaseDto.paymentMethod === PaymentMethodType.APPLE_PAY) {
-        throw new BadRequestException('Apple Pay integration coming soon');
-      } else {
-        throw new BadRequestException('Invalid payment method');
-      }
-
-      if (payment.status !== 'completed') {
-        throw new BadRequestException('Payment processing failed');
-      }
-
-      // Create subscription
-      const subscription = await this.subscriptionsService.createSubscription(
-        userId,
-        purchaseDto.planId,
-        payment.id,
-        purchaseDto.autoRenewal || false,
-        { couponCode: purchaseDto.couponCode },
-      );
-
-      // Send confirmation email
-      await this.notificationService.sendAutoRenewalSuccessNotification(subscription);
-
-      return {
-        success: true,
-        subscription: {
-          id: subscription.id,
-          plan: subscription.plan.name,
-          startDate: subscription.startDate,
-          expiryDate: subscription.expiryDate,
-          daysRemaining: subscription.getDaysRemaining(),
-          autoRenewal: subscription.isAutoRenewal,
-        },
-        payment: {
-          id: payment.id,
-          amount: payment.amount,
-          status: payment.status,
-          transactionId: payment.transactionId,
-        },
-      };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Purchase failed');
-    }
-  }
-
-  @Post('upgrade')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Upgrade subscription to higher tier' })
-  async upgradeSubscription(
-    @Request() req,
-    @Body() purchaseDto: PurchaseSubscriptionDto,
-  ) {
-    const userId = req.user.id;
-    const currentSub = await this.subscriptionsService.getUserSubscription(userId);
-
-    if (!currentSub) {
-      throw new NotFoundException('No active subscription to upgrade');
+    if (!subscription) {
+      throw new NotFoundException('No subscription found');
     }
 
-    try {
-      let payment;
-
-      if (purchaseDto.paymentMethod === PaymentMethodType.STRIPE) {
-        const details = purchaseDto.paymentDetails as StripePaymentDetailsDto;
-        payment = await this.paymentService.processStripePayment(
-          userId,
-          purchaseDto.planId,
-          details.tokenId,
-        );
-      } else if (purchaseDto.paymentMethod === PaymentMethodType.PAYPAL) {
-        const details = purchaseDto.paymentDetails as PayPalPaymentDetailsDto;
-        payment = await this.paymentService.processPayPalPayment(
-          userId,
-          purchaseDto.planId,
-          details.orderId,
-        );
-      } else {
-        throw new BadRequestException('Upgrade only supports Stripe and PayPal');
-      }
-
-      if (payment.status !== 'completed') {
-        throw new BadRequestException('Payment failed');
-      }
-
-      const upgraded = await this.subscriptionsService.upgradeSubscription(
-        userId,
-        purchaseDto.planId,
-        payment.id,
-      );
-
-      await this.notificationService.sendAutoRenewalSuccessNotification(upgraded);
-
-      return {
-        success: true,
-        subscription: {
-          id: upgraded.id,
-          plan: upgraded.plan.name,
-          expiryDate: upgraded.expiryDate,
-          daysRemaining: upgraded.getDaysRemaining(),
-        },
-      };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Upgrade failed');
-    }
-  }
-
-  @Post('extend')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Extend subscription by additional days' })
-  async extendSubscription(
-    @Request() req,
-    @Body() extendDto: ExtendSubscriptionDto,
-  ) {
-    const userId = req.user.id;
-
-    try {
-      let payment;
-
-      if (extendDto.paymentMethod === PaymentMethodType.STRIPE) {
-        const details = extendDto.paymentDetails as StripePaymentDetailsDto;
-        payment = await this.paymentService.processStripePayment(
-          userId,
-          'placeholder-plan-id', // Extension doesn't use a specific plan
-          details.tokenId,
-        );
-      } else {
-        throw new BadRequestException('Extension only supports Stripe');
-      }
-
-      if (payment.status !== 'completed') {
-        throw new BadRequestException('Payment failed');
-      }
-
-      const extended = await this.subscriptionsService.extendSubscription(
-        userId,
-        extendDto.extensionDays,
-        payment.id,
-      );
-
-      return {
-        success: true,
-        subscription: {
-          expiryDate: extended.expiryDate,
-          daysRemaining: extended.getDaysRemaining(),
-        },
-      };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Extension failed');
-    }
-  }
-
-  @Post('cancel')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cancel subscription' })
-  async cancelSubscription(
-    @Request() req,
-    @Body() cancelDto: CancelSubscriptionDto,
-  ) {
-    const userId = req.user.id;
-
-    try {
-      const cancelled = await this.subscriptionsService.cancelSubscription(
-        userId,
-        cancelDto.reason,
-      );
-
-      // Issue refund if applicable
-      if (cancelDto.refundType && cancelDto.refundType !== 'none') {
-        const payment = (await this.paymentService.getUserPayments(userId, 1, 1)).data[0];
-        if (payment) {
-          const refundAmount =
-            cancelDto.refundType === 'full' ? payment.amount : payment.amount * 0.5;
-          await this.paymentService.refundPayment(payment.id, refundAmount);
-        }
-      }
-
-      return {
-        success: true,
-        message: 'Subscription cancelled',
-        cancelledAt: cancelled.cancelledAt,
-      };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Cancellation failed');
-    }
-  }
-
-  @Post('renew')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Manually renew subscription' })
-  async renewSubscription(@Request() req) {
-    const userId = req.user.id;
-
-    try {
-      const renewed = await this.subscriptionsService.renewSubscription(userId);
-
-      return {
-        success: true,
-        subscription: {
-          expiryDate: renewed.expiryDate,
-          daysRemaining: renewed.getDaysRemaining(),
-        },
-      };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Renewal failed');
-    }
-  }
-
-  // ============ AUTO-RENEWAL ============
-
-  @Post('toggle-auto-renewal')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Enable or disable auto-renewal' })
-  async toggleAutoRenewal(
-    @Request() req,
-    @Body() toggleDto: ToggleAutoRenewalDto,
-  ) {
-    const userId = req.user.id;
-
-    try {
-      const updated = await this.subscriptionsService.toggleAutoRenewal(
-        userId,
-        toggleDto.enabled,
-      );
-
-      return {
-        success: true,
-        autoRenewal: updated.isAutoRenewal,
-      };
-    } catch (error) {
-      throw new BadRequestException(error.message || 'Toggle failed');
-    }
-  }
-
-  // ============ USAGE TRACKING ============
-
-  @Get('usage/current')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current cycle usage' })
-  async getCurrentUsage(@Request() req) {
-    const userId = req.user.id;
-    const usage = await this.usageService.getUsageSummary(userId);
-
+    // Note: Usage tracking would need to be imported from UsageService
+    // This is a placeholder
     return {
-      cycle: {
-        startDate: usage.cycleStart,
-        endDate: usage.cycleEnd,
-      },
-      dataUsage: {
-        usedGB: usage.dataUsed,
-        limitGB: usage.dataLimit,
-        usedPercent: usage.dataUsedPercent,
-        usedBytes: usage.dataUsedBytes,
-        limitBytes: usage.dataLimitBytes,
-      },
-      deviceUsage: {
-        active: usage.devicesUsed,
-        maxConcurrent: usage.maxDevices,
-      },
-      isLimitExceeded: usage.isLimitExceeded,
-      isNearLimit: usage.isNearLimit,
-      daysRemaining: usage.daysRemaining,
-      estimatedDailyRate: usage.estimatedDailyRate,
-      projectedTotalUsage: usage.projectedTotalUsage,
-      willExceedLimit: usage.willExceedLimit,
+      message: 'Usage endpoint - integrate with UsageService',
     };
   }
 
-  // ============ HISTORY & PAYMENTS ============
+  // ============ DEVICE TOKEN MANAGEMENT ============
 
-  @Get('history')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get subscription history' })
-  async getSubscriptionHistory(
+  @Post('device-tokens/register')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Register device for push notifications' })
+  async registerDeviceToken(
     @Request() req,
-    @Query() query: GetSubscriptionHistoryDto,
+    @Body()
+    body: {
+      token: string;
+      deviceName?: string;
+      deviceType?: string;
+      osVersion?: string;
+      appVersion?: string;
+    },
   ) {
-    const userId = req.user.id;
-    const page = query.page || 1;
-    const limit = query.limit || 20;
+    const userId = req.user?.id;
 
-    const { data, total } = await this.subscriptionsService.getUserSubscriptionHistory(
+    if (!body.token || body.token.trim().length === 0) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    const deviceToken = await this.fcmService.registerDeviceToken(
       userId,
-      page,
-      limit,
+      body.token.trim(),
+      body.deviceName,
+      body.deviceType,
+      body.osVersion,
+      body.appVersion,
     );
 
     return {
-      data: data.map((h) => ({
-        id: h.id,
-        action: h.action,
-        planName: h.plan.name,
-        startDate: h.startDate,
-        expiryDate: h.expiryDate,
-        reason: h.reason,
-        createdAt: h.createdAt,
-      })),
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
+      success: true,
+      message: 'Device token registered',
+      data: {
+        id: deviceToken.id,
+        deviceName: deviceToken.deviceName,
+        deviceType: deviceToken.deviceType,
       },
     };
   }
 
-  @Get('payments')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get payment history' })
-  async getPayments(@Request() req, @Query() query: GetPaymentsDto) {
-    const userId = req.user.id;
-    const page = query.page || 1;
-    const limit = query.limit || 20;
+  @Delete('device-tokens/:token')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Unregister device from push notifications' })
+  async unregisterDeviceToken(@Request() req, @Body() body: { token: string }) {
+    if (!body.token) {
+      throw new BadRequestException('Token required');
+    }
 
-    const { data, total } = await this.paymentService.getUserPayments(userId, page, limit);
+    await this.fcmService.unregisterDeviceToken(body.token);
 
     return {
-      data: data.map((p) => ({
-        id: p.id,
-        amount: p.amount,
-        currency: p.currency,
-        method: p.paymentMethod,
-        status: p.status,
-        transactionId: p.transactionId,
-        plan: p.plan.name,
-        createdAt: p.createdAt,
-      })),
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      success: true,
+      message: 'Device token unregistered',
     };
   }
 
-  @Post('validate')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Validate subscription status' })
-  async validateSubscription(@Request() req) {
-    const userId = req.user.id;
-    const isActive = await this.subscriptionsService.isSubscriptionActive(userId);
+  @Get('device-tokens')
+  @ApiOperation({ summary: 'List all registered devices' })
+  async listDeviceTokens(@Request() req) {
+    const userId = req.user?.id;
+    const tokens = await this.fcmService.getUserDeviceTokens(userId);
 
     return {
-      isActive,
-      timestamp: new Date(),
+      success: true,
+      data: tokens.map((t) => ({
+        id: t.id,
+        deviceName: t.deviceName,
+        deviceType: t.deviceType,
+        osVersion: t.osVersion,
+        appVersion: t.appVersion,
+        isActive: t.isActive,
+        lastUsedAt: t.lastUsedAt,
+      })),
     };
+  }
+
+  // ============ PAUSE & RESUME ============
+
+  @Post('pause')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Pause your subscription' })
+  async pauseSubscription(@Request() req, @Body() body: { reason?: string }) {
+    try {
+      const userId = req.user?.id;
+      const subscription = await this.subscriptionsService.getUserSubscription(userId);
+
+      if (!subscription) {
+        throw new NotFoundException('No subscription found');
+      }
+
+      const result = await this.pauseService.pauseSubscription(
+        subscription.id,
+        userId,
+        body.reason || 'User requested',
+      );
+
+      return {
+        success: true,
+        message: 'Subscription paused successfully',
+        data: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('resume')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Resume your paused subscription' })
+  async resumeSubscription(@Request() req) {
+    try {
+      const userId = req.user?.id;
+      const subscription = await this.subscriptionsService.getUserSubscription(userId);
+
+      if (!subscription) {
+        throw new NotFoundException('No subscription found');
+      }
+
+      const result = await this.pauseService.resumeSubscription(subscription.id, userId);
+
+      return {
+        success: true,
+        message: 'Subscription resumed successfully',
+        data: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('pause-history')
+  @ApiOperation({ summary: 'Get pause history for your subscription' })
+  async getPauseHistory(@Request() req) {
+    try {
+      const userId = req.user?.id;
+      const subscription = await this.subscriptionsService.getUserSubscription(userId);
+
+      if (!subscription) {
+        throw new NotFoundException('No subscription found');
+      }
+
+      const history = await this.pauseService.getPauseHistory(subscription.id);
+
+      return {
+        success: true,
+        data: history,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 }

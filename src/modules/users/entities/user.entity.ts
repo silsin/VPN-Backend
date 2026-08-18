@@ -127,6 +127,9 @@ export class User {
   @OneToMany('UsageTracking', 'user')
   usageTracking: any[];
 
+  @OneToMany('DeviceToken', 'user')
+  deviceTokens: any[];
+
   @CreateDateColumn()
   createdAt: Date;
 

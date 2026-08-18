@@ -21,6 +21,9 @@ import { UserRole } from '../users/entities/user.entity';
 import { SubscriptionsService } from './services/subscriptions.service';
 import { PaymentService } from './services/payment.service';
 import { UsageService } from './services/usage.service';
+import { RefundService } from './services/refund.service';
+import { AuditLogService } from './services/audit-log.service';
+import { PauseService } from './services/pause.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { AdminSubscriptionQueryDto } from './dto/query-params.dto';
 import { SubscriptionStatus } from './entities/user-subscription.entity';
@@ -35,6 +38,9 @@ export class SubscriptionsAdminController {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly paymentService: PaymentService,
     private readonly usageService: UsageService,
+    private readonly refundService: RefundService,
+    private readonly auditLogService: AuditLogService,
+    private readonly pauseService: PauseService,
   ) {}
 
   // ============ PLAN MANAGEMENT ============
@@ -343,6 +349,274 @@ export class SubscriptionsAdminController {
           status: payment.status,
           transactionId: payment.transactionId,
         },
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  // ============ REFUNDS ============
+
+  @Post('users/:userId/refund')
+  @ApiOperation({ summary: 'Apply pro-rata refund to user subscription' })
+  async applyRefund(
+    @Param('userId') userId: string,
+    @Body() body: { method: 'cash' | 'credit'; reason: string; amount?: number },
+  ) {
+    try {
+      let result;
+
+      if (body.method === 'cash') {
+        result = await this.refundService.applyRefundAsCash(
+          userId,
+          body.amount || 0,
+          body.reason,
+        );
+      } else if (body.method === 'credit') {
+        const calculated = await this.refundService.calculateProRataRefund(userId, 0);
+        result = await this.refundService.applyRefundAsCredit(
+          userId,
+          calculated.refundAmount,
+          body.reason,
+        );
+      } else {
+        throw new BadRequestException('Invalid refund method. Use "cash" or "credit"');
+      }
+
+      return {
+        success: true,
+        refund: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('users/:userId/refund-history')
+  @ApiOperation({ summary: 'Get refund and credit history for user' })
+  async getRefundHistory(@Param('userId') userId: string) {
+    try {
+      const history = await this.refundService.getRefundHistory(userId);
+
+      return {
+        userId,
+        history,
+        count: history.length,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('users/:userId/credit')
+  @ApiOperation({ summary: 'Get available credit balance for user' })
+  async getUserCredit(@Param('userId') userId: string) {
+    try {
+      const credit = await this.refundService.getAvailableCredit(userId);
+
+      return {
+        userId,
+        availableCredit: credit,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('users/:userId/calculate-refund')
+  @ApiOperation({ summary: 'Calculate pro-rata refund for user subscription' })
+  async calculateRefund(
+    @Param('userId') userId: string,
+    @Body() body: { newPlanPrice: number },
+  ) {
+    try {
+      const result = await this.refundService.calculateProRataRefund(
+        userId,
+        body.newPlanPrice,
+      );
+
+      return {
+        calculation: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  // ============ AUDIT LOGS ============
+
+  @Get('users/:userId/audit-logs')
+  @ApiOperation({ summary: 'Get audit logs for user' })
+  async getUserAuditLogs(
+    @Param('userId') userId: string,
+    @Query('limit') limit = 50,
+  ) {
+    try {
+      const logs = await this.auditLogService.getUserLogs(userId, limit);
+
+      return {
+        userId,
+        count: logs.length,
+        logs,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('audit-logs/actions/:action')
+  @ApiOperation({ summary: 'Get audit logs by action type' })
+  async getLogsByAction(
+    @Param('action') action: string,
+    @Query('limit') limit = 100,
+  ) {
+    try {
+      const logs = await this.auditLogService.getLogsByAction(action as any, limit);
+
+      return {
+        action,
+        count: logs.length,
+        logs,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('audit-logs/admin/:adminId')
+  @ApiOperation({ summary: 'Get all actions performed by an admin' })
+  async getAdminActions(
+    @Param('adminId') adminId: string,
+    @Query('limit') limit = 100,
+  ) {
+    try {
+      const logs = await this.auditLogService.getAdminActions(adminId, limit);
+
+      return {
+        adminId,
+        count: logs.length,
+        logs,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('audit-logs/resource/:resource/:resourceId')
+  @ApiOperation({ summary: 'Get audit logs for a specific resource' })
+  async getResourceLogs(
+    @Param('resource') resource: string,
+    @Param('resourceId') resourceId: string,
+  ) {
+    try {
+      const logs = await this.auditLogService.getResourceLogs(resource, resourceId);
+
+      return {
+        resource,
+        resourceId,
+        count: logs.length,
+        logs,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  // ============ SUBSCRIPTION PAUSE/RESUME ============
+
+  @Post('users/:userId/pause')
+  @ApiOperation({ summary: 'Pause user subscription' })
+  async pauseSubscription(
+    @Request() req,
+    @Param('userId') userId: string,
+    @Body() body: { subscriptionId: string; reason: string },
+  ) {
+    try {
+      const result = await this.pauseService.pauseSubscription(
+        body.subscriptionId,
+        userId,
+        body.reason,
+        req.user.id, // adminId
+      );
+
+      return {
+        success: true,
+        pause: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('users/:userId/resume')
+  @ApiOperation({ summary: 'Resume paused subscription' })
+  async resumeSubscription(
+    @Request() req,
+    @Param('userId') userId: string,
+    @Body() body: { subscriptionId: string },
+  ) {
+    try {
+      const result = await this.pauseService.resumeSubscription(
+        body.subscriptionId,
+        userId,
+        req.user.id, // adminId
+      );
+
+      return {
+        success: true,
+        resume: result,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('users/:userId/pause-history/:subscriptionId')
+  @ApiOperation({ summary: 'Get pause history for subscription' })
+  async getPauseHistory(
+    @Param('userId') userId: string,
+    @Param('subscriptionId') subscriptionId: string,
+  ) {
+    try {
+      const history = await this.pauseService.getPauseHistory(subscriptionId);
+
+      return {
+        userId,
+        subscriptionId,
+        count: history.length,
+        history,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('paused-subscriptions')
+  @ApiOperation({ summary: 'Get all paused subscriptions' })
+  async getPausedSubscriptions(@Query('limit') limit = 100) {
+    try {
+      const subscriptions = await this.pauseService.getPausedSubscriptions(limit);
+
+      return {
+        count: subscriptions.length,
+        subscriptions,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('auto-resume-expired-pauses')
+  @ApiOperation({ summary: 'Auto-resume subscriptions exceeding max pause duration' })
+  async autoResumeExpiredPauses(@Body() body: { maxPauseDays?: number }) {
+    try {
+      const resumed = await this.pauseService.autoResumeExpiredPausedSubscriptions(
+        body.maxPauseDays || 30,
+      );
+
+      return {
+        success: true,
+        resumedCount: resumed,
       };
     } catch (error) {
       throw new BadRequestException(error.message);

@@ -19,6 +19,7 @@ export enum SubscriptionStatus {
   EXPIRED = 'expired',
   CANCELLED = 'cancelled',
   SUSPENDED = 'suspended',
+  PAUSED = 'paused',
   PENDING = 'pending', // Payment processing
 }
 
@@ -81,6 +82,21 @@ export class UserSubscription {
 
   @Column({ type: 'jsonb', default: {} })
   metadata: Record<string, any>; // Store extra info (promo codes, discount %, etc.)
+
+  @Column({ type: 'timestamp', nullable: true })
+  suspendedAt: Date; // When subscription was suspended
+
+  @Column({ type: 'varchar', nullable: true, length: 500 })
+  suspendedReason: string; // Reason for suspension
+
+  @Column({ type: 'varchar', nullable: true })
+  suspendedByAdminId: string; // Admin who suspended, or null if automatic
+
+  @Column({ type: 'timestamp', nullable: true })
+  pausedAt: Date; // When subscription was paused
+
+  @Column({ type: 'varchar', nullable: true, length: 500 })
+  pausedReason: string; // Reason for pause
 
   @OneToMany(() => Payment, (payment) => payment.subscription)
   payments: Payment[];
@@ -148,6 +164,21 @@ export class UserSubscription {
    */
   hasFeature(feature: string): boolean {
     if (!this.isActive()) return false;
+    if (this.status === SubscriptionStatus.SUSPENDED) return false;
     return this.plan.hasFeature(feature);
+  }
+
+  /**
+   * Check if subscription is suspended
+   */
+  isSuspended(): boolean {
+    return this.status === SubscriptionStatus.SUSPENDED;
+  }
+
+  /**
+   * Check if subscription is paused
+   */
+  isPaused(): boolean {
+    return this.status === SubscriptionStatus.PAUSED;
   }
 }
