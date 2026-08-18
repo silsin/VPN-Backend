@@ -9,6 +9,10 @@ import { UserSubscription } from '../entities/user-subscription.entity';
 import { Payment } from '../entities/payment.entity';
 import { SubscriptionHistory } from '../entities/subscription-history.entity';
 import { UsageTracking } from '../entities/usage-tracking.entity';
+import { DeviceToken } from '../entities/device-token.entity';
+import { GiftCode } from '../entities/gift-code.entity';
+import { PromoCode } from '../entities/promo-code.entity';
+import { AuditLog } from '../entities/audit-log.entity';
 import { SubscriptionsService } from '../services/subscriptions.service';
 import { UsageService } from '../services/usage.service';
 import { PaymentService } from '../services/payment.service';
@@ -19,6 +23,12 @@ import { EmailService } from '../services/email.service';
 import { FcmService } from '../services/fcm.service';
 import { UsersModule } from '../../users/users.module';
 import { User } from '../../users/entities/user.entity';
+import { GiftCodeService } from '../services/gift-code.service';
+import { PromoCodeService } from '../services/promo-code.service';
+import { RefundService } from '../services/refund.service';
+import { AuditLogService } from '../services/audit-log.service';
+import { PauseService } from '../services/pause.service';
+import { TrialService } from '../services/trial.service';
 
 /**
  * Telegram integration for subscription system
@@ -35,6 +45,10 @@ import { User } from '../../users/entities/user.entity';
       Payment,
       SubscriptionHistory,
       UsageTracking,
+      DeviceToken,
+      GiftCode,
+      PromoCode,
+      AuditLog,
       User,
     ]),
     UsersModule,
@@ -49,6 +63,12 @@ import { User } from '../../users/entities/user.entity';
     NotificationService,
     EmailService,
     FcmService,
+    GiftCodeService,
+    PromoCodeService,
+    RefundService,
+    AuditLogService,
+    PauseService,
+    TrialService,
     SubscriptionAdminCommandsService,
     SubscriptionTelegramKeyboardService,
     SubscriptionTelegramHandlerService,
@@ -58,6 +78,16 @@ import { User } from '../../users/entities/user.entity';
     UsageService,
     PaymentService,
     GooglePlayBillingService,
+    PayPalService,
+    NotificationService,
+    EmailService,
+    FcmService,
+    GiftCodeService,
+    PromoCodeService,
+    RefundService,
+    AuditLogService,
+    PauseService,
+    TrialService,
     SubscriptionAdminCommandsService,
     SubscriptionTelegramKeyboardService,
     SubscriptionTelegramHandlerService,
