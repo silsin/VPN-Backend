@@ -217,4 +217,57 @@ export class EmailService {
     `;
     return this.sendEmail(email, `Your ${planName} Subscription Has Been Resumed`, html);
   }
+
+  async sendTrialStartedNotification(email: string, userFirstName: string, planName: string, daysRemaining: number, trialEndDate: Date): Promise<boolean> {
+    const endDateStr = trialEndDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    const html = `
+      <h2>Free Trial Started!</h2>
+      <p>Hi ${userFirstName},</p>
+      <p>Your free ${daysRemaining}-day trial for <strong>${planName}</strong> has started!</p>
+      <p>Trial ends on: <strong>${endDateStr}</strong></p>
+      <p>Enjoy unlimited VPN access. After the trial ends, your subscription will automatically convert to a paid plan.</p>
+      <p><a href="https://flyvpn.com/account/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Your Trial</a></p>
+      <p>Best regards,<br/>FlyVPN Team</p>
+    `;
+    return this.sendEmail(email, `Your Free Trial for ${planName} Has Started!`, html);
+  }
+
+  async sendTrialConvertedNotification(email: string, userFirstName: string, planName: string, planPrice: number, expiryDate: Date): Promise<boolean> {
+    const expiryStr = expiryDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    const html = `
+      <h2>Trial Ended - Subscription Active</h2>
+      <p>Hi ${userFirstName},</p>
+      <p>Your free trial for <strong>${planName}</strong> has ended.</p>
+      <p>Your subscription is now active and will auto-renew.</p>
+      <p><strong>Plan:</strong> ${planName}<br/>
+      <strong>Price:</strong> $${planPrice.toFixed(2)}/month<br/>
+      <strong>Expires:</strong> ${expiryStr}</p>
+      <p>View your receipt and manage subscription:</p>
+      <p><a href="https://flyvpn.com/account/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">View Receipt</a></p>
+      <p>Best regards,<br/>FlyVPN Team</p>
+    `;
+    return this.sendEmail(email, `Your Free Trial Has Ended - Subscription Active`, html);
+  }
+
+  async sendTrialExpiredNotification(email: string, userFirstName: string, planName: string): Promise<boolean> {
+    const html = `
+      <h2>Free Trial Expired</h2>
+      <p>Hi ${userFirstName},</p>
+      <p>Your free trial for <strong>${planName}</strong> has expired.</p>
+      <p>To continue using VPN, please subscribe to one of our plans.</p>
+      <p><a href="https://flyvpn.com/upgrade" style="background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Subscribe Now</a></p>
+      <p>Best regards,<br/>FlyVPN Team</p>
+    `;
+    return this.sendEmail(email, `Your Free Trial for ${planName} Has Expired`, html);
+  }
 }

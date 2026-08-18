@@ -44,6 +44,12 @@ export class SubscriptionPlan {
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  hasFreeTrial: boolean;
+
+  @Column({ type: 'int', nullable: true })
+  trialDays: number; // Number of trial days (7, 14, etc.)
+
   @Column({ type: 'uuid', nullable: true })
   createdBy: string; // Admin user who created
 

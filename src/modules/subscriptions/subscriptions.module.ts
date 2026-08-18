@@ -22,6 +22,7 @@ import { GooglePlayBillingService } from './services/google-play-billing.service
 import { RefundService } from './services/refund.service';
 import { AuditLogService } from './services/audit-log.service';
 import { PauseService } from './services/pause.service';
+import { TrialService } from './services/trial.service';
 
 // Telegram Module
 import { SubscriptionTelegramModule } from './telegram/subscription-telegram.module';
@@ -94,6 +95,7 @@ import { UsersModule } from '../users/users.module';
     RefundService,
     AuditLogService,
     PauseService,
+    TrialService,
     SubscriptionProcessor,
     SubscriptionPlansSeeder,
     SubscriptionGuard,
@@ -113,6 +115,7 @@ import { UsersModule } from '../users/users.module';
     RefundService,
     AuditLogService,
     PauseService,
+    TrialService,
     SubscriptionGuard,
     FeatureAccessGuard,
     DeviceLimitGuard,

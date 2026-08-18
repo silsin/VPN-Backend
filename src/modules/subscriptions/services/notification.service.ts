@@ -390,4 +390,115 @@ export class NotificationService {
       this.logger.error(`Failed to send resume notification: ${error.message}`);
     }
   }
+
+  /**
+   * Send trial started notification
+   */
+  async sendTrialStartedNotification(subscription: UserSubscription): Promise<void> {
+    try {
+      const user = subscription.user;
+
+      this.logger.log(
+        `Sending trial started notification to user ${subscription.userId}`,
+      );
+
+      if (!user?.email) {
+        this.logger.warn(`No email found for user ${subscription.userId}`);
+        return;
+      }
+
+      const daysRemaining = subscription.getTrialDaysRemaining();
+
+      // Send email
+      await this.emailService.sendTrialStartedNotification(
+        user.email,
+        user.username || 'User',
+        subscription.plan.name,
+        daysRemaining,
+        subscription.trialEndDate,
+      );
+
+      // Send push notification
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        'Free Trial Started',
+        `Your free ${daysRemaining}-day trial for ${subscription.plan.name} has started!`,
+        { type: 'trial_started' },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send trial started notification: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send trial converted to paid notification
+   */
+  async sendTrialConvertedNotification(subscription: UserSubscription): Promise<void> {
+    try {
+      const user = subscription.user;
+
+      this.logger.log(
+        `Sending trial converted notification to user ${subscription.userId}`,
+      );
+
+      if (!user?.email) {
+        this.logger.warn(`No email found for user ${subscription.userId}`);
+        return;
+      }
+
+      // Send email
+      await this.emailService.sendTrialConvertedNotification(
+        user.email,
+        user.username || 'User',
+        subscription.plan.name,
+        subscription.plan.price,
+        subscription.expiryDate,
+      );
+
+      // Send push notification
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        'Trial Ended - Subscription Active',
+        `Your free trial for ${subscription.plan.name} has ended. Your subscription is now active!`,
+        { type: 'trial_converted' },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send trial converted notification: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send trial expired notification
+   */
+  async sendTrialExpiredNotification(subscription: UserSubscription): Promise<void> {
+    try {
+      const user = subscription.user;
+
+      this.logger.log(
+        `Sending trial expired notification to user ${subscription.userId}`,
+      );
+
+      if (!user?.email) {
+        this.logger.warn(`No email found for user ${subscription.userId}`);
+        return;
+      }
+
+      // Send email
+      await this.emailService.sendTrialExpiredNotification(
+        user.email,
+        user.username || 'User',
+        subscription.plan.name,
+      );
+
+      // Send push notification
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        'Free Trial Ended',
+        `Your free trial for ${subscription.plan.name} has expired. Subscribe to continue using VPN.`,
+        { type: 'trial_expired' },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send trial expired notification: ${error.message}`);
+    }
+  }
 }

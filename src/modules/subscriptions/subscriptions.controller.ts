@@ -4,6 +4,7 @@ import {
   Post,
   Delete,
   Body,
+  Param,
   UseGuards,
   Request,
   HttpCode,
@@ -15,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FcmService } from './services/fcm.service';
 import { SubscriptionsService } from './services/subscriptions.service';
 import { PauseService } from './services/pause.service';
+import { TrialService } from './services/trial.service';
 
 @ApiTags('Subscriptions - User')
 @Controller('subscriptions')
@@ -25,6 +27,7 @@ export class SubscriptionsController {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly fcmService: FcmService,
     private readonly pauseService: PauseService,
+    private readonly trialService: TrialService,
   ) {}
 
   @Get('me')
@@ -141,6 +144,48 @@ export class SubscriptionsController {
         lastUsedAt: t.lastUsedAt,
       })),
     };
+  }
+
+  // ============ FREE TRIAL ============
+
+  @Get('trial/eligible/:planId')
+  @ApiOperation({ summary: 'Check if user is eligible for free trial' })
+  async checkTrialEligibility(@Request() req, @Param('planId') planId: string) {
+    try {
+      const userId = req.user?.id;
+      const eligibility = await this.trialService.checkTrialEligibility(userId, planId);
+
+      return {
+        success: true,
+        data: eligibility,
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('trial/redeem/:planId')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Redeem free trial for plan' })
+  async redeemTrial(@Request() req, @Param('planId') planId: string) {
+    try {
+      const userId = req.user?.id;
+      const result = await this.trialService.redeemTrial(userId, planId);
+
+      return {
+        success: true,
+        message: result.message,
+        subscription: {
+          id: result.subscription.id,
+          planName: result.subscription.plan.name,
+          status: result.subscription.status,
+          trialEndDate: result.trialEndDate,
+          daysRemaining: result.subscription.getTrialDaysRemaining(),
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 
   // ============ PAUSE & RESUME ============

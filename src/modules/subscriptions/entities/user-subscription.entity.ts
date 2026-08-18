@@ -98,6 +98,15 @@ export class UserSubscription {
   @Column({ type: 'varchar', nullable: true, length: 500 })
   pausedReason: string; // Reason for pause
 
+  @Column({ type: 'boolean', default: false })
+  isTrialActive: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  trialEndDate: Date;
+
+  @Column({ type: 'boolean', default: false })
+  trialRedeemed: boolean; // Track if user already used trial
+
   @OneToMany(() => Payment, (payment) => payment.subscription)
   payments: Payment[];
 
@@ -180,5 +189,24 @@ export class UserSubscription {
    */
   isPaused(): boolean {
     return this.status === SubscriptionStatus.PAUSED;
+  }
+
+  /**
+   * Check if trial is active
+   */
+  isTrialExpired(): boolean {
+    if (!this.isTrialActive) return false;
+    return new Date() >= this.trialEndDate;
+  }
+
+  /**
+   * Get trial days remaining
+   */
+  getTrialDaysRemaining(): number {
+    if (!this.isTrialActive) return 0;
+    const now = new Date();
+    if (now >= this.trialEndDate) return 0;
+    const diff = this.trialEndDate.getTime() - now.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }
 }
