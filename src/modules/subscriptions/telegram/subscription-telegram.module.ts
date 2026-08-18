@@ -18,6 +18,7 @@ import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
 import { FcmService } from '../services/fcm.service';
 import { UsersModule } from '../../users/users.module';
+import { User } from '../../users/entities/user.entity';
 
 /**
  * Telegram integration for subscription system
@@ -34,6 +35,7 @@ import { UsersModule } from '../../users/users.module';
       Payment,
       SubscriptionHistory,
       UsageTracking,
+      User,
     ]),
     UsersModule,
   ],
