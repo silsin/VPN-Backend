@@ -4,7 +4,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS "promo_codes" (
-  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "code" VARCHAR(50) NOT NULL UNIQUE,
   "type" VARCHAR(20) DEFAULT 'percentage',
   "discountValue" DECIMAL(10, 2) NOT NULL,

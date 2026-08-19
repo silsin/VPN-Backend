@@ -4,7 +4,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS "gift_codes" (
-  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "code" VARCHAR(50) NOT NULL UNIQUE,
   "planId" UUID NOT NULL REFERENCES "subscription_plans"("id") ON DELETE RESTRICT,
   "status" VARCHAR(50) DEFAULT 'active',

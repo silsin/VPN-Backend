@@ -4,7 +4,7 @@
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS "device_tokens" (
-  "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "userId" UUID NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
   "token" TEXT NOT NULL UNIQUE,
   "deviceName" VARCHAR(100),

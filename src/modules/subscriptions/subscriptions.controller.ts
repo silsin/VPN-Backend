@@ -20,8 +20,6 @@ import { TrialService } from './services/trial.service';
 
 @ApiTags('Subscriptions - User')
 @Controller('subscriptions')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
 export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
@@ -30,7 +28,78 @@ export class SubscriptionsController {
     private readonly trialService: TrialService,
   ) {}
 
+  // ============ PUBLIC PLAN DISCOVERY (No Auth Required) ============
+
+  @Get('plans')
+  @ApiOperation({ summary: 'Get all available subscription plans (Public)' })
+  async getAvailablePlans() {
+    try {
+      const plans = await this.subscriptionsService.getAllPlans(false);
+
+      return {
+        success: true,
+        plans: plans.map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          price: parseFloat(p.price.toString()),
+          durationDays: p.durationDays,
+          dataLimitGb: p.dataLimitGb,
+          maxDevices: p.maxDevices,
+          features: p.features,
+          hasFreeTrial: p.hasFreeTrial,
+          trialDays: p.trialDays,
+          displayOrder: p.displayOrder,
+          isActive: p.isActive,
+        })),
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Get('plans/:planId')
+  @ApiOperation({ summary: 'Get subscription plan details (Public)' })
+  async getPlanDetails(@Param('planId') planId: string) {
+    try {
+      const plan = await this.subscriptionsService.getPlanById(planId);
+
+      if (!plan || !plan.isActive) {
+        throw new NotFoundException('Plan not found or inactive');
+      }
+
+      return {
+        success: true,
+        plan: {
+          id: plan.id,
+          name: plan.name,
+          description: plan.description,
+          price: parseFloat(plan.price.toString()),
+          durationDays: plan.durationDays,
+          dataLimitGb: plan.dataLimitGb,
+          maxDevices: plan.maxDevices,
+          features: plan.features,
+          hasFreeTrial: plan.hasFreeTrial,
+          trialDays: plan.trialDays,
+          displayOrder: plan.displayOrder,
+          isActive: plan.isActive,
+          createdAt: plan.createdAt,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  // ============ AUTHENTICATED ENDPOINTS (JWT Required) ============
+
   @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current user subscription' })
   @ApiOperation({ summary: 'Get current user subscription' })
   async getMySubscription(@Request() req) {
     const userId = req.user?.id;
@@ -52,6 +121,8 @@ export class SubscriptionsController {
   }
 
   @Get('usage')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current usage for subscription' })
   async getUsage(@Request() req) {
     const userId = req.user?.id;
@@ -71,6 +142,8 @@ export class SubscriptionsController {
   // ============ DEVICE TOKEN MANAGEMENT ============
 
   @Post('device-tokens/register')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(200)
   @ApiOperation({ summary: 'Register device for push notifications' })
   async registerDeviceToken(
@@ -111,6 +184,8 @@ export class SubscriptionsController {
   }
 
   @Delete('device-tokens/:token')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(200)
   @ApiOperation({ summary: 'Unregister device from push notifications' })
   async unregisterDeviceToken(@Request() req, @Body() body: { token: string }) {
@@ -127,6 +202,8 @@ export class SubscriptionsController {
   }
 
   @Get('device-tokens')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'List all registered devices' })
   async listDeviceTokens(@Request() req) {
     const userId = req.user?.id;
@@ -149,6 +226,8 @@ export class SubscriptionsController {
   // ============ FREE TRIAL ============
 
   @Get('trial/eligible/:planId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Check if user is eligible for free trial' })
   async checkTrialEligibility(@Request() req, @Param('planId') planId: string) {
     try {
@@ -165,6 +244,8 @@ export class SubscriptionsController {
   }
 
   @Post('trial/redeem/:planId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(200)
   @ApiOperation({ summary: 'Redeem free trial for plan' })
   async redeemTrial(@Request() req, @Param('planId') planId: string) {
@@ -191,6 +272,8 @@ export class SubscriptionsController {
   // ============ PAUSE & RESUME ============
 
   @Post('pause')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(200)
   @ApiOperation({ summary: 'Pause your subscription' })
   async pauseSubscription(@Request() req, @Body() body: { reason?: string }) {
@@ -219,6 +302,8 @@ export class SubscriptionsController {
   }
 
   @Post('resume')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(200)
   @ApiOperation({ summary: 'Resume your paused subscription' })
   async resumeSubscription(@Request() req) {
@@ -243,6 +328,8 @@ export class SubscriptionsController {
   }
 
   @Get('pause-history')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get pause history for your subscription' })
   async getPauseHistory(@Request() req) {
     try {

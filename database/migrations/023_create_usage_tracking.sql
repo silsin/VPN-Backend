@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS usage_tracking (
 -- Create indexes for frequent queries
 CREATE INDEX idx_usage_tracking_user_id ON usage_tracking("userId");
 CREATE INDEX idx_usage_tracking_user_cycle ON usage_tracking("userId", "cycleStartDate", "cycleEndDate");
-CREATE INDEX idx_usage_tracking_current_cycle ON usage_tracking("userId") WHERE "cycleEndDate" > CURRENT_TIMESTAMP;
 CREATE INDEX idx_usage_tracking_exceeded ON usage_tracking("userId") WHERE "isLimitExceeded" = true;
 CREATE INDEX idx_usage_tracking_cycle_start ON usage_tracking("cycleStartDate");
 
@@ -53,8 +52,11 @@ SELECT
     ut."isLimitExceeded"
 FROM usage_tracking ut
 WHERE ut."cycleEndDate" > CURRENT_TIMESTAMP
-GROUP BY ut."userId"
-HAVING ut."cycleStartDate" = MAX(ut."cycleStartDate");
+  AND ut.id IN (
+    SELECT id FROM usage_tracking ut2 
+    WHERE ut2."userId" = ut."userId" 
+    ORDER BY ut2."cycleStartDate" DESC LIMIT 1
+  );
 
 -- Create view for monthly usage aggregates
 CREATE VIEW monthly_usage_aggregates AS
@@ -71,5 +73,5 @@ GROUP BY "userId", DATE_TRUNC('month', "cycleStartDate");
 
 -- Add comment
 COMMENT ON TABLE usage_tracking IS 'Per-cycle data usage tracking. One record per user per billing cycle. Used to enforce data limits and send warnings.';
-COMMENT ON COLUMN usage_tracking."dataLimitBytes IS 'NULL means unlimited data. For Free plan users, this might be 500GB * 1024 * 1024 * 1024 bytes.';
+COMMENT ON COLUMN usage_tracking."dataLimitBytes" IS 'NULL means unlimited data. For Free plan users, this might be 500GB * 1024 * 1024 * 1024 bytes.';
 COMMENT ON COLUMN usage_tracking."isLimitExceeded" IS 'Set to true when dataUsedBytes >= dataLimitBytes. Triggers throttling or blocking of connections.';
