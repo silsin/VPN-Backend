@@ -730,4 +730,16 @@ export class SubscriptionsService {
 
     return updated;
   }
+
+  /**
+   * Get all users with active subscriptions
+   */
+  async getAllActiveUsers(): Promise<any[]> {
+    return this.userSubscriptionsRepository
+      .createQueryBuilder('us')
+      .select('DISTINCT(us.userId)', 'id')
+      .where('us.status = :status', { status: SubscriptionStatus.ACTIVE })
+      .orWhere('us.status = :status', { status: SubscriptionStatus.PAUSED })
+      .getRawMany();
+  }
 }

@@ -24,6 +24,8 @@ import { UsageService } from './services/usage.service';
 import { RefundService } from './services/refund.service';
 import { AuditLogService } from './services/audit-log.service';
 import { PauseService } from './services/pause.service';
+import { FcmService } from './services/fcm.service';
+import { NotificationService } from './services/notification.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { AdminSubscriptionQueryDto } from './dto/query-params.dto';
 import { SubscriptionStatus } from './entities/user-subscription.entity';
@@ -41,6 +43,8 @@ export class SubscriptionsAdminController {
     private readonly refundService: RefundService,
     private readonly auditLogService: AuditLogService,
     private readonly pauseService: PauseService,
+    private readonly fcmService: FcmService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // ============ PLAN MANAGEMENT ============
@@ -730,4 +734,123 @@ export class SubscriptionsAdminController {
       throw new BadRequestException(error.message);
     }
   }
+
+  // ============ PUSH NOTIFICATIONS (Testing) ============
+
+  @Post('users/:userId/send-test-push')
+  @ApiOperation({ summary: 'Send test push notification to user (Admin only)' })
+  async sendTestPush(
+    @Param('userId') userId: string,
+    @Body() body?: { title?: string; body?: string; data?: Record<string, string> },
+  ) {
+    try {
+      const title = body?.title || 'Test Notification';
+      const message = body?.body || 'This is a test push notification from FlyVPN';
+      const data = body?.data || { type: 'test_notification' };
+
+      const successCount = await this.fcmService.sendToUser(userId, title, message, data);
+
+      return {
+        success: true,
+        userId,
+        title,
+        message,
+        data,
+        successCount,
+        deviceNotification: successCount > 0 
+          ? `Push notification sent to ${successCount} device(s)`
+          : 'No active device tokens found for user',
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('users/:userId/send-expiration-reminder')
+  @ApiOperation({ summary: 'Send subscription expiration reminder (Admin only)' })
+  async sendExpirationReminder(@Param('userId') userId: string) {
+    try {
+      const subscription = await this.subscriptionsService.getUserSubscription(userId);
+
+      if (!subscription) {
+        throw new NotFoundException('No subscription found for user');
+      }
+
+      const daysRemaining = subscription.getDaysRemaining();
+
+      const successCount = await this.fcmService.sendExpirationReminder(
+        userId,
+        daysRemaining,
+        subscription.plan.name,
+      );
+
+      return {
+        success: true,
+        userId,
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        daysRemaining,
+        devicesSentTo: successCount,
+        message: `Expiration reminder sent to ${successCount} device(s)`,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  @Post('broadcast-push')
+  @ApiOperation({ summary: 'Broadcast push notification to all users (Admin only)' })
+  async broadcastPush(
+    @Body() body: { title: string; message: string; data?: Record<string, string> },
+  ) {
+    try {
+      if (!body.title || !body.message) {
+        throw new BadRequestException('Title and message are required');
+      }
+
+      // Get all users with active subscriptions
+      const users = await this.subscriptionsService.getAllActiveUsers();
+
+      let totalSent = 0;
+      const results = [];
+
+      for (const user of users) {
+        try {
+          const successCount = await this.fcmService.sendToUser(
+            user.id,
+            body.title,
+            body.message,
+            body.data,
+          );
+
+          totalSent += successCount;
+          if (successCount > 0) {
+            results.push({
+              userId: user.id,
+              devicesSentTo: successCount,
+            });
+          }
+        } catch (error) {
+          // Continue with next user if one fails
+          continue;
+        }
+      }
+
+      return {
+        success: true,
+        title: body.title,
+        message: body.message,
+        totalUsers: users.length,
+        usersWithDevices: results.length,
+        totalDevicesSentTo: totalSent,
+        details: results.slice(0, 10), // Return first 10 results
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
 }
+
