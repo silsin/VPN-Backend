@@ -67,7 +67,7 @@ export class AuditLog {
   @Column({ nullable: true, name: 'user_agent' })
   userAgent?: string;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
   constructor(data?: Partial<AuditLog>) {
