@@ -62,11 +62,19 @@ export class TrialService {
     });
 
     if (existingSubscription && existingSubscription.trialRedeemed) {
-      return {
-        eligible: false,
-        reason: `You have already used the free trial for ${plan.name}. Try again after 90 days.`,
-        planName: plan.name,
-      };
+      // Check if 90 days have passed since trial ended
+      const ninetyDaysAfterTrialEnd = new Date(existingSubscription.trialEndDate);
+      ninetyDaysAfterTrialEnd.setDate(ninetyDaysAfterTrialEnd.getDate() + 90);
+      
+      if (new Date() < ninetyDaysAfterTrialEnd) {
+        const daysUntilEligible = Math.ceil((ninetyDaysAfterTrialEnd.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          eligible: false,
+          reason: `You have already used the free trial for ${plan.name}. You can retry in ${daysUntilEligible} days (${ninetyDaysAfterTrialEnd.toLocaleDateString()}).`,
+          planName: plan.name,
+        };
+      }
+      // If 90 days have passed, allow redemption (continue to check other conditions)
     }
 
     // Check if user has any active subscription for this plan in last 90 days
