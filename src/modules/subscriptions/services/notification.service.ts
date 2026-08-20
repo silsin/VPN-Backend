@@ -9,7 +9,7 @@ import { User } from '../../users/entities/user.entity';
 
 /**
  * Notification Service
- * Handles sending notifications for subscription events (email + push)
+ * Handles sending notifications for subscription events (email + push FCM)
  */
 @Injectable()
 export class NotificationService {
@@ -22,9 +22,6 @@ export class NotificationService {
     private userRepository: Repository<User>,
   ) {}
 
-  /**
-   * Send subscription expiring reminder
-   */
   async sendExpirationReminder(subscription: UserSubscription): Promise<void> {
     try {
       const daysRemaining = subscription.getDaysRemaining();
@@ -39,7 +36,6 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendExpirationReminder(
         user.email,
         user.username || 'User',
@@ -47,12 +43,10 @@ export class NotificationService {
         subscription.plan.name,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending expiration reminder FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         `${subscription.plan.name} expires soon`,
-        `Your subscription expires in ${daysRemaining} days. Renew now to avoid interruptions!`,
+        `Your subscription expires in ${daysRemaining} days. Renew now!`,
         { type: 'expiration_reminder', daysRemaining: String(daysRemaining) },
       );
     } catch (error) {
@@ -60,9 +54,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send subscription expired notification
-   */
   async sendSubscriptionExpiredNotification(subscription: UserSubscription): Promise<void> {
     try {
       const user = subscription.user;
@@ -76,15 +67,12 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendSubscriptionExpired(user.email, user.username || 'User');
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending subscription expired FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         '⏰ Subscription Expired',
-        `Your ${subscription.plan.name} subscription has expired. Renew now to reconnect!`,
+        `Your ${subscription.plan.name} subscription has expired. Renew now!`,
         { type: 'subscription_expired', planId: subscription.planId },
       );
     } catch (error) {
@@ -92,9 +80,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send data usage warning
-   */
   async sendDataUsageWarning(userId: string, usage: UsageTracking): Promise<void> {
     try {
       const usagePercent = usage.getUsagePercent();
@@ -111,7 +96,6 @@ export class NotificationService {
 
       const dataLimitGB = usage.dataLimitBytes ? usage.dataLimitBytes / (1024 * 1024 * 1024) : 0;
 
-      // Send email
       await this.emailService.sendDataUsageWarning(
         user.email,
         user.username || 'User',
@@ -119,12 +103,10 @@ export class NotificationService {
         dataLimitGB,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending data usage warning FCM to ${userId}`);
       await this.fcmService.sendToUser(
         userId,
         '⚠️ Data Usage Warning',
-        `You've used ${usagePercent.toFixed(1)}% of your monthly data limit!`,
+        `You've used ${usagePercent.toFixed(1)}% of your monthly data!`,
         { type: 'data_usage_warning', usagePercent: String(usagePercent.toFixed(1)) },
       );
     } catch (error) {
@@ -132,9 +114,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send data limit exceeded notification
-   */
   async sendDataLimitExceededNotification(userId: string, usage: UsageTracking): Promise<void> {
     try {
       const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -150,15 +129,12 @@ export class NotificationService {
 
       const dataLimitGB = usage.dataLimitBytes ? usage.dataLimitBytes / (1024 * 1024 * 1024) : 0;
 
-      // Send email
       await this.emailService.sendDataLimitExceeded(user.email, user.username || 'User', dataLimitGB);
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending data limit exceeded FCM to ${userId}`);
       await this.fcmService.sendToUser(
         userId,
         '🚫 Data Limit Reached',
-        `You've reached your ${dataLimitGB.toFixed(0)}GB monthly data limit. Upgrade to continue!`,
+        `You've reached your ${dataLimitGB.toFixed(0)}GB monthly limit!`,
         { type: 'data_limit_exceeded', limitGB: String(dataLimitGB.toFixed(0)) },
       );
     } catch (error) {
@@ -166,9 +142,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send payment failed notification
-   */
   async sendPaymentFailedNotification(
     userId: string,
     reason: string,
@@ -187,9 +160,8 @@ export class NotificationService {
         return;
       }
 
-      const retryDate = nextRetryTime || new Date(Date.now() + 60 * 60 * 1000); // Default 1 hour
+      const retryDate = nextRetryTime || new Date(Date.now() + 60 * 60 * 1000);
 
-      // Send email
       await this.emailService.sendPaymentFailed(
         user.email,
         user.username || 'User',
@@ -198,12 +170,10 @@ export class NotificationService {
         retryDate,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending payment failed FCM to ${userId}`);
       await this.fcmService.sendToUser(
         userId,
         '❌ Payment Failed',
-        `Your subscription payment failed. We'll retry in ${retryCount} hour(s).`,
+        `Your payment failed. We'll retry in ${retryCount} hour(s).`,
         { type: 'payment_failed', retryCount: String(retryCount) },
       );
     } catch (error) {
@@ -211,9 +181,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send auto-renewal successful notification
-   */
   async sendAutoRenewalSuccessNotification(subscription: UserSubscription): Promise<void> {
     try {
       const user = subscription.user;
@@ -227,10 +194,8 @@ export class NotificationService {
         return;
       }
 
-      // Get payment amount from metadata or plan price
       const amount = subscription.metadata?.paymentAmount || subscription.plan.price;
 
-      // Send email
       await this.emailService.sendAutoRenewalSuccess(
         user.email,
         user.username || 'User',
@@ -239,12 +204,10 @@ export class NotificationService {
         subscription.expiryDate,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending auto-renewal success FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         '✅ Subscription Renewed',
-        `Your ${subscription.plan.name} subscription has been renewed. Valid until ${subscription.expiryDate.toLocaleDateString()}.`,
+        `Your ${subscription.plan.name} subscription renewed!`,
         { type: 'auto_renewal_success', planName: subscription.plan.name },
       );
     } catch (error) {
@@ -252,9 +215,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send upgrade suggestion
-   */
   async sendUpgradeSuggestion(userId: string, reason: string): Promise<void> {
     try {
       const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -267,31 +227,19 @@ export class NotificationService {
         this.logger.warn(`No email found for user ${userId}`);
         return;
       }
-
-      // Could implement a specialized email template here
-      // For now, just log it
     } catch (error) {
       this.logger.error(`Failed to send upgrade suggestion: ${error.message}`);
     }
   }
 
-  /**
-   * Send admin alert
-   */
   async sendAdminAlert(message: string): Promise<void> {
     try {
       this.logger.warn(`Admin Alert: ${message}`);
-
-      // Could send to admin email here if needed
-      // For now, just log it
     } catch (error) {
       this.logger.error(`Failed to send admin alert: ${error.message}`);
     }
   }
 
-  /**
-   * Send subscription suspended notification
-   */
   async sendSubscriptionSuspendedNotification(subscription: UserSubscription): Promise<void> {
     try {
       const user = subscription.user;
@@ -305,29 +253,23 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendSubscriptionSuspended(
         user.email,
         user.username || 'User',
         subscription.suspendedReason || 'Unknown reason',
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending suspension FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         '⛔ Subscription Suspended',
-        `Your subscription has been suspended: ${subscription.suspendedReason || 'Unknown reason'}`,
-        { type: 'subscription_suspended', reason: subscription.suspendedReason },
+        `Your subscription suspended: ${subscription.suspendedReason || 'Unknown reason'}`,
+        { type: 'subscription_suspended' },
       );
     } catch (error) {
       this.logger.error(`Failed to send suspension notification: ${error.message}`);
     }
   }
 
-  /**
-   * Send device limit exceeded notification
-   */
   async sendDeviceLimitExceededNotification(userId: string, deviceLimit: number): Promise<void> {
     try {
       const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -341,15 +283,12 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendDeviceLimitExceeded(user.email, user.username || 'User', deviceLimit);
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending device limit FCM to ${userId}`);
       await this.fcmService.sendToUser(
         userId,
         '📱 Device Limit Reached',
-        `You've reached your limit of ${deviceLimit} devices. Remove a device to continue.`,
+        `You've reached your limit of ${deviceLimit} devices.`,
         { type: 'device_limit_exceeded', limit: String(deviceLimit) },
       );
     } catch (error) {
@@ -357,9 +296,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send subscription paused notification
-   */
   async sendPauseNotification(subscription: UserSubscription, reason: string): Promise<void> {
     try {
       const user = subscription.user;
@@ -373,7 +309,6 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendPauseNotification(
         user.email,
         user.username || 'User',
@@ -381,12 +316,10 @@ export class NotificationService {
         reason,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending pause FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         '⏸️ Subscription Paused',
-        `Your ${subscription.plan.name} subscription has been paused. Your expiry date is frozen until you resume.`,
+        `Your ${subscription.plan.name} subscription is paused.`,
         { type: 'subscription_paused', reason },
       );
     } catch (error) {
@@ -394,9 +327,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send subscription resumed notification
-   */
   async sendResumeNotification(subscription: UserSubscription, pauseDurationDays: number): Promise<void> {
     try {
       const user = subscription.user;
@@ -410,7 +340,6 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendResumeNotification(
         user.email,
         user.username || 'User',
@@ -419,12 +348,10 @@ export class NotificationService {
         subscription.expiryDate,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending resume FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         '▶️ Subscription Resumed',
-        `Your ${subscription.plan.name} subscription has been resumed. Expires on ${subscription.expiryDate.toLocaleDateString()}.`,
+        `Your ${subscription.plan.name} subscription is active again!`,
         { type: 'subscription_resumed', planName: subscription.plan.name },
       );
     } catch (error) {
@@ -432,34 +359,8 @@ export class NotificationService {
     }
   }
 
-      // Send email
-      await this.emailService.sendResumeNotification(
-        user.email,
-        user.username || 'User',
-        subscription.plan.name,
-        pauseDurationDays,
-        subscription.expiryDate,
-      );
-
-      // Send push notification
-      await this.fcmService.sendToUser(
-        subscription.userId,
-        'Subscription Resumed',
-        `Your ${subscription.plan.name} subscription has been resumed. Your expiry date has been extended by ${pauseDurationDays} days.`,
-        { type: 'subscription_resumed' },
-      );
-    } catch (error) {
-      this.logger.error(`Failed to send resume notification: ${error.message}`);
-    }
-  }
-
-  /**
-   * Send trial started notification
-   */
   async sendTrialStartedNotification(subscription: UserSubscription): Promise<void> {
     try {
-      this.logger.log(`📨 sendTrialStartedNotification called for user ${subscription.userId}`);
-      
       const user = subscription.user;
 
       this.logger.log(
@@ -472,10 +373,7 @@ export class NotificationService {
       }
 
       const daysRemaining = subscription.getTrialDaysRemaining();
-      this.logger.debug(`Trial days remaining: ${daysRemaining}`);
 
-      // Send email
-      this.logger.log(`📧 Sending email notification to ${user.email}`);
       await this.emailService.sendTrialStartedNotification(
         user.email,
         user.username || 'User',
@@ -484,23 +382,17 @@ export class NotificationService {
         subscription.trialEndDate,
       );
 
-      // Send push notification
-      this.logger.log(`📲 Calling FCM service for user ${subscription.userId}`);
-      const result = await this.fcmService.sendToUser(
+      await this.fcmService.sendToUser(
         subscription.userId,
-        'Free Trial Started',
-        `Your free ${daysRemaining}-day trial for ${subscription.plan.name} has started!`,
+        'Free Trial Started 🎉',
+        `Your ${daysRemaining}-day trial for ${subscription.plan.name} started!`,
         { type: 'trial_started' },
       );
-      this.logger.log(`📲 FCM service returned: ${result} devices notified`);
     } catch (error) {
-      this.logger.error(`❌ Failed to send trial started notification: ${error.message}`, error.stack);
+      this.logger.error(`Failed to send trial started notification: ${error.message}`);
     }
   }
 
-  /**
-   * Send trial converted to paid notification
-   */
   async sendTrialConvertedNotification(subscription: UserSubscription): Promise<void> {
     try {
       const user = subscription.user;
@@ -514,7 +406,6 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendTrialConvertedNotification(
         user.email,
         user.username || 'User',
@@ -523,62 +414,10 @@ export class NotificationService {
         subscription.expiryDate,
       );
 
-      // Send push notification directly
-      this.logger.log(`📲 Sending trial converted FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
         '💳 Trial Converted to Paid',
-        `Your trial has ended. Your ${subscription.plan.name} subscription is now active with auto-renewal.`,
-        { type: 'trial_converted', planName: subscription.plan.name },
-      );
-    } catch (error) {
-      this.logger.error(`Failed to send trial converted notification: ${error.message}`);
-    }
-  }
-
-  /**
-   * Send trial expired notification
-   */
-  async sendTrialExpiredNotification(subscription: UserSubscription): Promise<void> {
-    try {
-      const user = subscription.user;
-
-      this.logger.log(
-        `Sending trial expired notification to user ${subscription.userId}`,
-      );
-
-      if (!user?.email) {
-        this.logger.warn(`No email found for user ${subscription.userId}`);
-        return;
-      }
-
-      // Send email
-      await this.emailService.sendTrialExpired(
-        user.email,
-        user.username || 'User',
-        subscription.plan.name,
-      );
-
-      // Send push notification directly
-      this.logger.log(`📲 Sending trial expired FCM to ${subscription.userId}`);
-      await this.fcmService.sendToUser(
-        subscription.userId,
-        '⏰ Trial Expired',
-        `Your free trial for ${subscription.plan.name} has expired. Upgrade to keep your VPN access!`,
-        { type: 'trial_expired', planName: subscription.plan.name },
-      );
-    } catch (error) {
-      this.logger.error(`Failed to send trial expired notification: ${error.message}`);
-    }
-  }
-        subscription.expiryDate,
-      );
-
-      // Send push notification
-      await this.fcmService.sendToUser(
-        subscription.userId,
-        'Trial Ended - Subscription Active',
-        `Your free trial for ${subscription.plan.name} has ended. Your subscription is now active!`,
+        `Your trial ended. ${subscription.plan.name} subscription is active!`,
         { type: 'trial_converted' },
       );
     } catch (error) {
@@ -586,9 +425,6 @@ export class NotificationService {
     }
   }
 
-  /**
-   * Send trial expired notification
-   */
   async sendTrialExpiredNotification(subscription: UserSubscription): Promise<void> {
     try {
       const user = subscription.user;
@@ -602,18 +438,16 @@ export class NotificationService {
         return;
       }
 
-      // Send email
       await this.emailService.sendTrialExpiredNotification(
         user.email,
         user.username || 'User',
         subscription.plan.name,
       );
 
-      // Send push notification
       await this.fcmService.sendToUser(
         subscription.userId,
-        'Free Trial Ended',
-        `Your free trial for ${subscription.plan.name} has expired. Subscribe to continue using VPN.`,
+        '⏰ Trial Expired',
+        `Your free trial for ${subscription.plan.name} expired. Upgrade now!`,
         { type: 'trial_expired' },
       );
     } catch (error) {
