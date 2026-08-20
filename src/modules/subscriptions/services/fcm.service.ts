@@ -113,6 +113,8 @@ export class FcmService {
       },
     });
 
+    this.logger.debug(`🔍 FCM: Found ${tokens.length} active device tokens for user ${userId}`);
+
     if (tokens.length === 0) {
       this.logger.debug(`No active device tokens for user ${userId}`);
       return 0;
@@ -171,6 +173,8 @@ export class FcmService {
       let successCount = 0;
       const invalidTokens: string[] = [];
 
+      this.logger.log(`📤 Sending FCM to ${tokens.length} tokens: "${title}" - "${body}"`);
+
       for (const token of tokens) {
         try {
           await admin.messaging().send({
@@ -178,8 +182,9 @@ export class FcmService {
             token,
           } as any);
           successCount++;
+          this.logger.debug(`✅ FCM sent to token: ${token.substring(0, 20)}...`);
         } catch (error: any) {
-          this.logger.error(`Failed to send FCM message to token ${token}: ${error.message}`);
+          this.logger.error(`❌ FCM failed for token ${token.substring(0, 20)}...: ${error.message}`);
 
           // Mark invalid tokens as inactive
           if (
@@ -197,12 +202,13 @@ export class FcmService {
           { token: invalidTokens as any },
           { isActive: false },
         );
+        this.logger.warn(`Deactivated ${invalidTokens.length} invalid tokens`);
       }
 
-      this.logger.log(`Sent FCM message to ${successCount}/${tokens.length} devices`);
+      this.logger.log(`📊 FCM Result: ${successCount}/${tokens.length} devices`);
       return successCount;
     } catch (error) {
-      this.logger.error(`Failed to send FCM messages: ${error.message}`);
+      this.logger.error(`❌ FCM send failed: ${error.message}`);
       return 0;
     }
   }
