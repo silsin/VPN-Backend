@@ -47,11 +47,13 @@ export class NotificationService {
         subscription.plan.name,
       );
 
-      // Send push notification
-      await this.fcmService.sendExpirationReminder(
+      // Send push notification directly
+      this.logger.log(`📲 Sending expiration reminder FCM to ${subscription.userId}`);
+      await this.fcmService.sendToUser(
         subscription.userId,
-        daysRemaining,
-        subscription.plan.name,
+        `${subscription.plan.name} expires soon`,
+        `Your subscription expires in ${daysRemaining} days. Renew now to avoid interruptions!`,
+        { type: 'expiration_reminder', daysRemaining: String(daysRemaining) },
       );
     } catch (error) {
       this.logger.error(`Failed to send expiration reminder: ${error.message}`);
@@ -77,8 +79,14 @@ export class NotificationService {
       // Send email
       await this.emailService.sendSubscriptionExpired(user.email, user.username || 'User');
 
-      // Send push notification
-      await this.fcmService.sendSubscriptionExpired(subscription.userId);
+      // Send push notification directly
+      this.logger.log(`📲 Sending subscription expired FCM to ${subscription.userId}`);
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        '⏰ Subscription Expired',
+        `Your ${subscription.plan.name} subscription has expired. Renew now to reconnect!`,
+        { type: 'subscription_expired', planId: subscription.planId },
+      );
     } catch (error) {
       this.logger.error(`Failed to send expired notification: ${error.message}`);
     }
@@ -111,8 +119,14 @@ export class NotificationService {
         dataLimitGB,
       );
 
-      // Send push notification
-      await this.fcmService.sendDataUsageWarning(userId, usagePercent);
+      // Send push notification directly
+      this.logger.log(`📲 Sending data usage warning FCM to ${userId}`);
+      await this.fcmService.sendToUser(
+        userId,
+        '⚠️ Data Usage Warning',
+        `You've used ${usagePercent.toFixed(1)}% of your monthly data limit!`,
+        { type: 'data_usage_warning', usagePercent: String(usagePercent.toFixed(1)) },
+      );
     } catch (error) {
       this.logger.error(`Failed to send usage warning: ${error.message}`);
     }
@@ -139,8 +153,14 @@ export class NotificationService {
       // Send email
       await this.emailService.sendDataLimitExceeded(user.email, user.username || 'User', dataLimitGB);
 
-      // Send push notification
-      await this.fcmService.sendDataLimitExceeded(userId);
+      // Send push notification directly
+      this.logger.log(`📲 Sending data limit exceeded FCM to ${userId}`);
+      await this.fcmService.sendToUser(
+        userId,
+        '🚫 Data Limit Reached',
+        `You've reached your ${dataLimitGB.toFixed(0)}GB monthly data limit. Upgrade to continue!`,
+        { type: 'data_limit_exceeded', limitGB: String(dataLimitGB.toFixed(0)) },
+      );
     } catch (error) {
       this.logger.error(`Failed to send limit exceeded notification: ${error.message}`);
     }
@@ -178,8 +198,14 @@ export class NotificationService {
         retryDate,
       );
 
-      // Send push notification
-      await this.fcmService.sendPaymentFailed(userId, retryCount);
+      // Send push notification directly
+      this.logger.log(`📲 Sending payment failed FCM to ${userId}`);
+      await this.fcmService.sendToUser(
+        userId,
+        '❌ Payment Failed',
+        `Your subscription payment failed. We'll retry in ${retryCount} hour(s).`,
+        { type: 'payment_failed', retryCount: String(retryCount) },
+      );
     } catch (error) {
       this.logger.error(`Failed to send payment failed notification: ${error.message}`);
     }
@@ -213,8 +239,14 @@ export class NotificationService {
         subscription.expiryDate,
       );
 
-      // Send push notification
-      await this.fcmService.sendAutoRenewalSuccess(subscription.userId, subscription.plan.name);
+      // Send push notification directly
+      this.logger.log(`📲 Sending auto-renewal success FCM to ${subscription.userId}`);
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        '✅ Subscription Renewed',
+        `Your ${subscription.plan.name} subscription has been renewed. Valid until ${subscription.expiryDate.toLocaleDateString()}.`,
+        { type: 'auto_renewal_success', planName: subscription.plan.name },
+      );
     } catch (error) {
       this.logger.error(`Failed to send auto-renewal success notification: ${error.message}`);
     }
@@ -280,12 +312,13 @@ export class NotificationService {
         subscription.suspendedReason || 'Unknown reason',
       );
 
-      // Send push notification (using device limit as a template)
+      // Send push notification directly
+      this.logger.log(`📲 Sending suspension FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
-        'Subscription Suspended',
+        '⛔ Subscription Suspended',
         `Your subscription has been suspended: ${subscription.suspendedReason || 'Unknown reason'}`,
-        { type: 'subscription_suspended' },
+        { type: 'subscription_suspended', reason: subscription.suspendedReason },
       );
     } catch (error) {
       this.logger.error(`Failed to send suspension notification: ${error.message}`);
@@ -311,8 +344,14 @@ export class NotificationService {
       // Send email
       await this.emailService.sendDeviceLimitExceeded(user.email, user.username || 'User', deviceLimit);
 
-      // Send push notification
-      await this.fcmService.sendDeviceLimitExceeded(userId);
+      // Send push notification directly
+      this.logger.log(`📲 Sending device limit FCM to ${userId}`);
+      await this.fcmService.sendToUser(
+        userId,
+        '📱 Device Limit Reached',
+        `You've reached your limit of ${deviceLimit} devices. Remove a device to continue.`,
+        { type: 'device_limit_exceeded', limit: String(deviceLimit) },
+      );
     } catch (error) {
       this.logger.error(`Failed to send device limit notification: ${error.message}`);
     }
@@ -342,12 +381,13 @@ export class NotificationService {
         reason,
       );
 
-      // Send push notification
+      // Send push notification directly
+      this.logger.log(`📲 Sending pause FCM to ${subscription.userId}`);
       await this.fcmService.sendToUser(
         subscription.userId,
-        'Subscription Paused',
+        '⏸️ Subscription Paused',
         `Your ${subscription.plan.name} subscription has been paused. Your expiry date is frozen until you resume.`,
-        { type: 'subscription_paused' },
+        { type: 'subscription_paused', reason },
       );
     } catch (error) {
       this.logger.error(`Failed to send pause notification: ${error.message}`);
@@ -369,6 +409,28 @@ export class NotificationService {
         this.logger.warn(`No email found for user ${subscription.userId}`);
         return;
       }
+
+      // Send email
+      await this.emailService.sendResumeNotification(
+        user.email,
+        user.username || 'User',
+        subscription.plan.name,
+        pauseDurationDays,
+        subscription.expiryDate,
+      );
+
+      // Send push notification directly
+      this.logger.log(`📲 Sending resume FCM to ${subscription.userId}`);
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        '▶️ Subscription Resumed',
+        `Your ${subscription.plan.name} subscription has been resumed. Expires on ${subscription.expiryDate.toLocaleDateString()}.`,
+        { type: 'subscription_resumed', planName: subscription.plan.name },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send resume notification: ${error.message}`);
+    }
+  }
 
       // Send email
       await this.emailService.sendResumeNotification(
@@ -458,6 +520,57 @@ export class NotificationService {
         user.username || 'User',
         subscription.plan.name,
         subscription.plan.price,
+        subscription.expiryDate,
+      );
+
+      // Send push notification directly
+      this.logger.log(`📲 Sending trial converted FCM to ${subscription.userId}`);
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        '💳 Trial Converted to Paid',
+        `Your trial has ended. Your ${subscription.plan.name} subscription is now active with auto-renewal.`,
+        { type: 'trial_converted', planName: subscription.plan.name },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send trial converted notification: ${error.message}`);
+    }
+  }
+
+  /**
+   * Send trial expired notification
+   */
+  async sendTrialExpiredNotification(subscription: UserSubscription): Promise<void> {
+    try {
+      const user = subscription.user;
+
+      this.logger.log(
+        `Sending trial expired notification to user ${subscription.userId}`,
+      );
+
+      if (!user?.email) {
+        this.logger.warn(`No email found for user ${subscription.userId}`);
+        return;
+      }
+
+      // Send email
+      await this.emailService.sendTrialExpired(
+        user.email,
+        user.username || 'User',
+        subscription.plan.name,
+      );
+
+      // Send push notification directly
+      this.logger.log(`📲 Sending trial expired FCM to ${subscription.userId}`);
+      await this.fcmService.sendToUser(
+        subscription.userId,
+        '⏰ Trial Expired',
+        `Your free trial for ${subscription.plan.name} has expired. Upgrade to keep your VPN access!`,
+        { type: 'trial_expired', planName: subscription.plan.name },
+      );
+    } catch (error) {
+      this.logger.error(`Failed to send trial expired notification: ${error.message}`);
+    }
+  }
         subscription.expiryDate,
       );
 
