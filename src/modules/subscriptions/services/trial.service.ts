@@ -120,13 +120,14 @@ export class TrialService {
       throw new BadRequestException(eligibility.reason);
     }
 
+    // Get plan first
+    const plan = await this.planRepository.findOne({ where: { id: planId } });
+
     // Get or create subscription
     let subscription = await this.subscriptionRepository.findOne({
       where: { userId, planId },
       relations: ['plan', 'user'],
     });
-
-    const plan = await this.planRepository.findOne({ where: { id: planId } });
 
     const trialEndDate = new Date();
     trialEndDate.setDate(trialEndDate.getDate() + plan.trialDays);
@@ -155,6 +156,12 @@ export class TrialService {
     }
 
     await this.subscriptionRepository.save(subscription);
+
+    // Reload with relations for notification service
+    subscription = await this.subscriptionRepository.findOne({
+      where: { id: subscription.id },
+      relations: ['plan', 'user'],
+    });
 
     // Audit log
     await this.auditLogService.log(AuditLogAction.SUBSCRIPTION_CREATED, {
