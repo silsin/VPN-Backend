@@ -78,20 +78,26 @@ export class TrialService {
     }
 
     // Check if user has any active subscription for this plan in last 90 days
+    // Only check if it was created after trial would have ended
     const recentSubscription = await this.subscriptionRepository
       .createQueryBuilder('sub')
       .where('sub.userId = :userId', { userId })
       .andWhere('sub.planId = :planId', { planId })
-      .andWhere('sub.createdAt > :ninetyDaysAgo', {
+      .andWhere('sub.trialRedeemed = :trialRedeemed', { trialRedeemed: true })
+      .andWhere('sub.trialEndDate > :ninetyDaysAgo', {
         ninetyDaysAgo: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
       })
-      .orderBy('sub.createdAt', 'DESC')
+      .orderBy('sub.trialEndDate', 'DESC')
       .getOne();
 
     if (recentSubscription) {
+      const ninetyDaysAfterTrialEnd = new Date(recentSubscription.trialEndDate);
+      ninetyDaysAfterTrialEnd.setDate(ninetyDaysAfterTrialEnd.getDate() + 90);
+      const daysUntilEligible = Math.ceil((ninetyDaysAfterTrialEnd.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      
       return {
         eligible: false,
-        reason: 'You have already used a trial for this plan recently. Wait 90 days before trying again.',
+        reason: `You have already used a trial for this plan recently. You can retry in ${daysUntilEligible} days.`,
         planName: plan.name,
       };
     }
