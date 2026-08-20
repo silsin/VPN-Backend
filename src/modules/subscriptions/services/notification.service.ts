@@ -396,6 +396,8 @@ export class NotificationService {
    */
   async sendTrialStartedNotification(subscription: UserSubscription): Promise<void> {
     try {
+      this.logger.log(`📨 sendTrialStartedNotification called for user ${subscription.userId}`);
+      
       const user = subscription.user;
 
       this.logger.log(
@@ -408,8 +410,10 @@ export class NotificationService {
       }
 
       const daysRemaining = subscription.getTrialDaysRemaining();
+      this.logger.debug(`Trial days remaining: ${daysRemaining}`);
 
       // Send email
+      this.logger.log(`📧 Sending email notification to ${user.email}`);
       await this.emailService.sendTrialStartedNotification(
         user.email,
         user.username || 'User',
@@ -419,14 +423,16 @@ export class NotificationService {
       );
 
       // Send push notification
-      await this.fcmService.sendToUser(
+      this.logger.log(`📲 Calling FCM service for user ${subscription.userId}`);
+      const result = await this.fcmService.sendToUser(
         subscription.userId,
         'Free Trial Started',
         `Your free ${daysRemaining}-day trial for ${subscription.plan.name} has started!`,
         { type: 'trial_started' },
       );
+      this.logger.log(`📲 FCM service returned: ${result} devices notified`);
     } catch (error) {
-      this.logger.error(`Failed to send trial started notification: ${error.message}`);
+      this.logger.error(`❌ Failed to send trial started notification: ${error.message}`, error.stack);
     }
   }
 
