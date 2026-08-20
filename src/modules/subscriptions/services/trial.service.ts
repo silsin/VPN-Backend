@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { UserSubscription, SubscriptionStatus } from '../entities/user-subscription.entity';
 import { SubscriptionPlan } from '../entities/subscription-plan.entity';
 import { NotificationService } from './notification.service';
+import { FcmService } from './fcm.service';
 import { AuditLogService } from './audit-log.service';
 import { AuditLogAction } from '../entities/audit-log.entity';
 
@@ -31,6 +32,7 @@ export class TrialService {
     @InjectRepository(SubscriptionPlan)
     private planRepository: Repository<SubscriptionPlan>,
     private notificationService: NotificationService,
+    private fcmService: FcmService,
     private auditLogService: AuditLogService,
   ) {}
 
@@ -180,8 +182,22 @@ export class TrialService {
       },
     });
 
-    // Send notification
+    // Send email notification
     await this.notificationService.sendTrialStartedNotification(subscription);
+
+    // Send FCM push notification directly
+    this.logger.log(`🚀 Sending FCM push notification for trial start`);
+    const trialDays = subscription.getTrialDaysRemaining();
+    await this.fcmService.sendToUser(
+      userId,
+      'Free Trial Started! 🎉',
+      `Your ${trialDays}-day free trial for ${plan.name} has started!`,
+      {
+        type: 'trial_started',
+        planId: plan.id,
+        trialDays: String(trialDays),
+      },
+    );
 
     this.logger.log(
       `Trial redeemed for user ${userId}: ${plan.name} - ${plan.trialDays} days (expires ${trialEndDate})`,
