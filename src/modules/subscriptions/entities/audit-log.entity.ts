@@ -40,16 +40,16 @@ export class AuditLog {
   @Column()
   action: AuditLogAction;
 
-  @Column('uuid', { nullable: true })
+  @Column('uuid', { nullable: true, name: 'user_id' })
   userId: string;
 
-  @Column('uuid', { nullable: true })
+  @Column('uuid', { nullable: true, name: 'admin_id' })
   adminId: string;
 
   @Column()
   resource: string; // e.g., 'subscription', 'payment', 'plan'
 
-  @Column('uuid', { nullable: true })
+  @Column('uuid', { nullable: true, name: 'resource_id' })
   resourceId: string;
 
   @Column('simple-json')
@@ -61,10 +61,10 @@ export class AuditLog {
   @Column({ nullable: true })
   reason?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, name: 'ip_address' })
   ipAddress?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, name: 'user_agent' })
   userAgent?: string;
 
   @CreateDateColumn()
