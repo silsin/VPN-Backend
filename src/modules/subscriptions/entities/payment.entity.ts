@@ -77,7 +77,7 @@ export class Payment {
   @Column({ type: 'varchar', length: 3, default: 'USD' })
   currency: string;
 
-  @Column({ type: 'varchar', length: 50 })
+  @Column({ type: 'varchar', length: 50, name: 'payment_method' })
   paymentMethod: PaymentMethod;
 
   @Column({ type: 'varchar', default: PaymentStatus.PENDING })
