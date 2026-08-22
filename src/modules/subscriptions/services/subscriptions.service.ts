@@ -773,12 +773,22 @@ export class SubscriptionsService {
     expiryDate.setDate(expiryDate.getDate() + plan.durationDays);
 
     if (subscription) {
-      // Update existing subscription - extend expiry
+      // REPLACE existing subscription (clear all trial data)
       subscription.planId = planId;
       subscription.plan = plan;
-      subscription.expiryDate = expiryDate;
       subscription.status = SubscriptionStatus.ACTIVE;
+      subscription.startDate = new Date();
+      subscription.expiryDate = expiryDate;
       subscription.isAutoRenewal = true;
+      subscription.isTrialActive = false;
+      subscription.trialEndDate = null;
+      subscription.trialRedeemed = false;
+      subscription.cancelledAt = null;
+      subscription.cancelledReason = null;
+      subscription.suspendedAt = null;
+      subscription.suspendedReason = null;
+      subscription.pausedAt = null;
+      subscription.pausedReason = null;
     } else {
       // Create new subscription
       subscription = this.userSubscriptionsRepository.create({
@@ -790,6 +800,7 @@ export class SubscriptionsService {
         expiryDate,
         isAutoRenewal: true,
         isTrialActive: false,
+        trialRedeemed: false,
       });
     }
 
