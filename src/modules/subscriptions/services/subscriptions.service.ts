@@ -4,7 +4,7 @@ import { Repository, In, MoreThan, LessThan, LessThanOrEqual } from 'typeorm';
 import { SubscriptionPlan } from '../entities/subscription-plan.entity';
 import { UserSubscription, SubscriptionStatus } from '../entities/user-subscription.entity';
 import { SubscriptionHistory, SubscriptionAction, ActionReason } from '../entities/subscription-history.entity';
-import { Payment, PaymentStatus } from '../entities/payment.entity';
+import { Payment, PaymentStatus, PaymentMethod } from '../entities/payment.entity';
 import { CreatePlanDto } from '../dto/create-plan.dto';
 import { UsersService } from '../../users/users.service';
 
@@ -803,33 +803,33 @@ export class SubscriptionsService {
     });
 
     // Log payment
-    await this.paymentsRepository.save({
+    const payment = await this.paymentsRepository.save({
       userId,
       subscriptionId: subscription.id,
+      planId,
       amount: plan.price,
       currency: 'USD',
-      paymentMethod: 'google_play',
-      paymentStatus: PaymentStatus.COMPLETED,
+      paymentMethod: PaymentMethod.GOOGLE_PLAY,
+      status: PaymentStatus.COMPLETED,
       metadata: {
         purchaseToken,
         packageName,
         productId,
       },
       transactionId: purchaseToken,
-      description: `Google Play purchase - ${plan.name}`,
-    });
+    } as any);
 
     // Log subscription action
     await this.logSubscriptionHistory({
       userId,
       subscriptionId: subscription.id,
-      action: SubscriptionAction.PURCHASE,
-      reason: ActionReason.PAYMENT_RECEIVED,
-      metadata: {
-        planId,
-        paymentMethod: 'google_play',
-        productId,
-      },
+      planId,
+      action: SubscriptionAction.PURCHASED,
+      reason: ActionReason.USER_REQUEST,
+      startDate: subscription.startDate,
+      expiryDate: subscription.expiryDate,
+      paymentId: payment.id,
+      notes: `Google Play purchase - ${plan.name}`,
     });
 
     return subscription;
