@@ -958,20 +958,5 @@ export class SubscriptionsService {
     this.logger.log(`✅ Subscription purchased for user ${userId} (validated with Google Play)`);
     return subscription;
   }
-
-    // Log subscription action
-    await this.logSubscriptionHistory({
-      userId,
-      planId,
-      action: SubscriptionAction.PURCHASED,
-      reason: ActionReason.USER_REQUEST,
-      startDate: subscription.startDate,
-      expiryDate: subscription.expiryDate,
-      paymentId: payment.id,
-      notes: `Google Play purchase - ${plan.name}`,
-    });
-
-    return subscription;
-  }
 }
 
