@@ -801,7 +801,8 @@ export class SubscriptionsService {
       relations: ['plan', 'user'],
     });
 
-    // Log payment
+    // Log payment with unique transaction ID
+    const uniqueTransactionId = `gp_${purchaseToken}_${Date.now()}`;
     const payment = await this.paymentsRepository.save({
       userId,
       subscriptionId: subscription.id,
@@ -815,7 +816,7 @@ export class SubscriptionsService {
         packageName,
         productId,
       },
-      transactionId: purchaseToken,
+      transactionId: uniqueTransactionId,
     } as any);
 
     // Log subscription action
