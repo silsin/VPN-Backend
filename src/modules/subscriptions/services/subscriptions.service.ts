@@ -742,4 +742,97 @@ export class SubscriptionsService {
       .orWhere('us.status = :status', { status: SubscriptionStatus.PAUSED })
       .getRawMany();
   }
+
+  /**
+   * Purchase subscription via Google Play
+   */
+  async purchaseWithGooglePlay(
+    userId: string,
+    planId: string,
+    purchaseToken: string,
+    packageName: string,
+    productId: string,
+  ): Promise<UserSubscription> {
+    // Verify plan exists
+    const plan = await this.plansRepository.findOne({ where: { id: planId } });
+    if (!plan) {
+      throw new NotFoundException(`Plan ${planId} not found`);
+    }
+
+    if (!plan.isActive) {
+      throw new BadRequestException('This plan is no longer available');
+    }
+
+    // Get or create subscription
+    let subscription = await this.userSubscriptionsRepository.findOne({
+      where: { userId, planId },
+      relations: ['plan', 'user'],
+    });
+
+    if (subscription) {
+      // Extend existing subscription
+      const newExpiryDate = new Date();
+      newExpiryDate.setDate(newExpiryDate.getDate() + plan.durationDays);
+
+      subscription.expiryDate = newExpiryDate;
+      subscription.status = SubscriptionStatus.ACTIVE;
+      subscription.isAutoRenewal = true;
+    } else {
+      // Create new subscription
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + plan.durationDays);
+
+      subscription = this.userSubscriptionsRepository.create({
+        userId,
+        planId,
+        plan,
+        status: SubscriptionStatus.ACTIVE,
+        startDate: new Date(),
+        expiryDate,
+        isAutoRenewal: true,
+        isTrialActive: false,
+      });
+    }
+
+    await this.userSubscriptionsRepository.save(subscription);
+
+    // Reload with relations
+    subscription = await this.userSubscriptionsRepository.findOne({
+      where: { id: subscription.id },
+      relations: ['plan', 'user'],
+    });
+
+    // Log payment
+    await this.paymentsRepository.save({
+      userId,
+      subscriptionId: subscription.id,
+      amount: plan.price,
+      currency: 'USD',
+      paymentMethod: 'google_play',
+      paymentStatus: PaymentStatus.COMPLETED,
+      metadata: {
+        purchaseToken,
+        packageName,
+        productId,
+      },
+      transactionId: purchaseToken,
+      description: `Google Play purchase - ${plan.name}`,
+    });
+
+    // Log subscription action
+    await this.logSubscriptionHistory({
+      userId,
+      subscriptionId: subscription.id,
+      action: SubscriptionAction.PURCHASE,
+      reason: ActionReason.PAYMENT_RECEIVED,
+      metadata: {
+        planId,
+        paymentMethod: 'google_play',
+        productId,
+      },
+    });
+
+    return subscription;
+  }
 }
+

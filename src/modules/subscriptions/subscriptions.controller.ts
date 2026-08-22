@@ -271,6 +271,71 @@ export class SubscriptionsController {
 
   // ============ PAUSE & RESUME ============
 
+  @Post('purchase')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Purchase subscription plan' })
+  async purchaseSubscription(
+    @Request() req,
+    @Body()
+    body: {
+      planId: string;
+      paymentMethod: string;
+      googlePlayDetails?: {
+        purchaseToken: string;
+        packageName: string;
+        productId: string;
+      };
+    },
+  ) {
+    try {
+      const userId = req.user?.id;
+
+      if (!body.planId) {
+        throw new BadRequestException('planId is required');
+      }
+
+      if (!body.paymentMethod) {
+        throw new BadRequestException('paymentMethod is required');
+      }
+
+      let subscription;
+
+      if (body.paymentMethod === 'google_play') {
+        if (!body.googlePlayDetails) {
+          throw new BadRequestException('googlePlayDetails required for Google Play purchases');
+        }
+
+        subscription = await this.subscriptionsService.purchaseWithGooglePlay(
+          userId,
+          body.planId,
+          body.googlePlayDetails.purchaseToken,
+          body.googlePlayDetails.packageName,
+          body.googlePlayDetails.productId,
+        );
+      } else {
+        throw new BadRequestException(`Payment method '${body.paymentMethod}' not supported`);
+      }
+
+      return {
+        success: true,
+        message: 'Purchase successful',
+        subscription: {
+          id: subscription.id,
+          planName: subscription.plan.name,
+          status: subscription.status,
+          expiryDate: subscription.expiryDate,
+          daysRemaining: subscription.getDaysRemaining(),
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  // ============ PAUSE & RESUME ============
+
   @Post('pause')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
