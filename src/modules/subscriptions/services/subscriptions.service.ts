@@ -744,6 +744,13 @@ export class SubscriptionsService {
   }
 
   /**
+   * Update an existing subscription
+   */
+  async updateSubscription(subscription: UserSubscription): Promise<UserSubscription> {
+    return this.userSubscriptionsRepository.save(subscription);
+  }
+
+  /**
    * Purchase subscription via Google Play
    */
   async purchaseWithGooglePlay(

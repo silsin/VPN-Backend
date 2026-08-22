@@ -10,6 +10,7 @@ import {
   HttpCode,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,10 +18,13 @@ import { FcmService } from './services/fcm.service';
 import { SubscriptionsService } from './services/subscriptions.service';
 import { PauseService } from './services/pause.service';
 import { TrialService } from './services/trial.service';
+import { SubscriptionStatus } from './entities/user-subscription.entity';
 
 @ApiTags('Subscriptions - User')
 @Controller('subscriptions')
 export class SubscriptionsController {
+  private logger = new Logger(SubscriptionsController.name);
+
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
     private readonly fcmService: FcmService,
@@ -334,7 +338,101 @@ export class SubscriptionsController {
     }
   }
 
-  // ============ PAUSE & RESUME ============
+  // ============ GOOGLE PLAY WEBHOOK ============
+
+  @Post('google-play-webhook')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Google Play subscription webhook (notifications)' })
+  async handleGooglePlayWebhook(@Body() body: any) {
+    try {
+      const { userId, notificationType, purchaseToken } = body;
+
+      if (!userId || !notificationType) {
+        throw new BadRequestException('Invalid webhook payload');
+      }
+
+      // Handle different notification types
+      switch (notificationType) {
+        case 'SUBSCRIPTION_CANCELED':
+          await this.handleSubscriptionCancelled(userId);
+          break;
+        case 'SUBSCRIPTION_RECOVERED':
+          await this.handleSubscriptionRecovered(userId);
+          break;
+        case 'SUBSCRIPTION_EXPIRED':
+          await this.handleSubscriptionExpired(userId);
+          break;
+        case 'SUBSCRIPTION_ON_HOLD':
+          await this.handleSubscriptionOnHold(userId);
+          break;
+        case 'SUBSCRIPTION_IN_GRACE_PERIOD':
+          await this.handleSubscriptionGracePeriod(userId);
+          break;
+        default:
+          this.logger.warn(`Unknown Google Play notification: ${notificationType}`);
+      }
+
+      return { success: true, message: 'Webhook processed' };
+    } catch (error) {
+      this.logger.error(`Webhook error: ${error.message}`);
+      throw new BadRequestException(error.message);
+    }
+  }
+
+  private async handleSubscriptionCancelled(userId: string): Promise<void> {
+    const subscription = await this.subscriptionsService.getUserSubscription(userId);
+    if (!subscription) return;
+
+    subscription.status = SubscriptionStatus.CANCELLED;
+    subscription.cancelledAt = new Date();
+    subscription.cancelledReason = 'User cancelled in Google Play';
+    subscription.isAutoRenewal = false;
+
+    await this.subscriptionsService.updateSubscription(subscription);
+    this.logger.log(`📱 Subscription cancelled for user ${userId} via Google Play`);
+  }
+
+  private async handleSubscriptionRecovered(userId: string): Promise<void> {
+    const subscription = await this.subscriptionsService.getUserSubscription(userId);
+    if (!subscription) return;
+
+    if (subscription.status === SubscriptionStatus.CANCELLED) {
+      subscription.status = SubscriptionStatus.ACTIVE;
+      subscription.cancelledAt = null;
+      subscription.cancelledReason = null;
+      subscription.isAutoRenewal = true;
+
+      await this.subscriptionsService.updateSubscription(subscription);
+      this.logger.log(`✅ Subscription recovered for user ${userId}`);
+    }
+  }
+
+  private async handleSubscriptionExpired(userId: string): Promise<void> {
+    const subscription = await this.subscriptionsService.getUserSubscription(userId);
+    if (!subscription) return;
+
+    subscription.status = SubscriptionStatus.EXPIRED;
+    subscription.expiryDate = new Date();
+
+    await this.subscriptionsService.updateSubscription(subscription);
+    this.logger.log(`⏰ Subscription expired for user ${userId}`);
+  }
+
+  private async handleSubscriptionOnHold(userId: string): Promise<void> {
+    const subscription = await this.subscriptionsService.getUserSubscription(userId);
+    if (!subscription) return;
+
+    subscription.status = SubscriptionStatus.SUSPENDED;
+    subscription.suspendedAt = new Date();
+    subscription.suspendedReason = 'On hold in Google Play (payment retry)';
+
+    await this.subscriptionsService.updateSubscription(subscription);
+    this.logger.log(`⏸️ Subscription on hold for user ${userId}`);
+  }
+
+  private async handleSubscriptionGracePeriod(userId: string): Promise<void> {
+    this.logger.log(`⏳ Subscription in grace period for user ${userId}`);
+  }
 
   @Post('pause')
   @UseGuards(JwtAuthGuard)
