@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThan, LessThan, LessThanOrEqual } from 'typeorm';
+import { google } from 'googleapis';
 import { SubscriptionPlan } from '../entities/subscription-plan.entity';
 import { UserSubscription, SubscriptionStatus } from '../entities/user-subscription.entity';
 import { SubscriptionHistory, SubscriptionAction, ActionReason } from '../entities/subscription-history.entity';
@@ -10,6 +11,9 @@ import { UsersService } from '../../users/users.service';
 
 @Injectable()
 export class SubscriptionsService {
+  private logger = new Logger(SubscriptionsService.name);
+  private androidPublisher: any;
+
   constructor(
     @InjectRepository(SubscriptionPlan)
     private plansRepository: Repository<SubscriptionPlan>,
@@ -20,7 +24,96 @@ export class SubscriptionsService {
     @InjectRepository(Payment)
     private paymentsRepository: Repository<Payment>,
     private usersService: UsersService,
-  ) {}
+  ) {
+    this.initializeGooglePlayAuth();
+  }
+
+  /**
+   * Initialize Google Play API authentication
+   */
+  private initializeGooglePlayAuth(): void {
+    try {
+      // Load service account credentials from environment
+      const serviceAccountKey = JSON.parse(
+        Buffer.from(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_KEY || '{}', 'base64').toString('utf-8'),
+      );
+
+      if (!serviceAccountKey.type) {
+        this.logger.warn('⚠️ Google Play service account not configured. Server-side purchase validation disabled.');
+        return;
+      }
+
+      const auth = new google.auth.GoogleAuth({
+        credentials: serviceAccountKey,
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      });
+
+      this.androidPublisher = google.androidpublisher({
+        version: 'v3',
+        auth,
+      });
+
+      this.logger.log('✅ Google Play API initialized');
+    } catch (error) {
+      this.logger.warn(`⚠️ Failed to initialize Google Play API: ${error.message}`);
+    }
+  }
+
+  /**
+   * Validate subscription purchase token with Google Play
+   */
+  async validateGooglePlaySubscription(
+    packageName: string,
+    subscriptionId: string,
+    purchaseToken: string,
+  ): Promise<any> {
+    try {
+      if (!this.androidPublisher) {
+        throw new Error('Google Play API not initialized');
+      }
+
+      const response = await this.androidPublisher.purchases.subscriptions.get({
+        packageName,
+        subscriptionId,
+        token: purchaseToken,
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error(`❌ Google Play validation failed: ${error.message}`);
+      throw new BadRequestException(`Invalid Google Play subscription: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if subscription is still active based on Google Play status
+   */
+  async isGooglePlaySubscriptionActive(
+    packageName: string,
+    subscriptionId: string,
+    purchaseToken: string,
+  ): Promise<boolean> {
+    try {
+      const purchaseData = await this.validateGooglePlaySubscription(
+        packageName,
+        subscriptionId,
+        purchaseToken,
+      );
+
+      // Payment state: 0 = Purchased, 1 = Cancelled
+      const paymentState = purchaseData.paymentState;
+      const isActive = paymentState === 0;
+
+      // Also check expiry time
+      const expiryTimeMs = parseInt(purchaseData.expiryTimeMillis);
+      const isNotExpired = expiryTimeMs > Date.now();
+
+      return isActive && isNotExpired;
+    } catch (error) {
+      this.logger.error(`Failed to check subscription active status: ${error.message}`);
+      return false;
+    }
+  }
 
   // ============ PLAN MANAGEMENT ============
 
@@ -760,7 +853,18 @@ export class SubscriptionsService {
     packageName: string,
     productId: string,
   ): Promise<UserSubscription> {
-    // Verify plan exists
+    // Step 1: Validate with Google Play servers
+    this.logger.log(`🔍 Validating Google Play subscription for user ${userId}`);
+    const googlePlayData = await this.validateGooglePlaySubscription(
+      packageName,
+      productId,
+      purchaseToken,
+    );
+
+    this.logger.log(`✅ Google Play validation successful`);
+    this.logger.debug(`Purchase state: ${googlePlayData.paymentState}, Expiry: ${googlePlayData.expiryTimeMillis}`);
+
+    // Step 2: Verify plan exists
     const plan = await this.plansRepository.findOne({ where: { id: planId } });
     if (!plan) {
       throw new NotFoundException(`Plan ${planId} not found`);
@@ -770,23 +874,24 @@ export class SubscriptionsService {
       throw new BadRequestException('This plan is no longer available');
     }
 
-    // Get existing subscription (only one per user allowed)
+    // Step 3: Calculate expiry date from Google Play data
+    const googleExpiryMs = parseInt(googlePlayData.expiryTimeMillis);
+    const expiryDate = new Date(googleExpiryMs);
+
+    // Step 4: Get or update subscription
     let subscription = await this.userSubscriptionsRepository.findOne({
       where: { userId },
       relations: ['plan', 'user'],
     });
-
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + plan.durationDays);
 
     if (subscription) {
       // REPLACE existing subscription (clear all trial data)
       subscription.planId = planId;
       subscription.plan = plan;
       subscription.status = SubscriptionStatus.ACTIVE;
-      subscription.startDate = new Date();
+      subscription.startDate = new Date(parseInt(googlePlayData.startTimeMillis));
       subscription.expiryDate = expiryDate;
-      subscription.isAutoRenewal = true;
+      subscription.isAutoRenewal = googlePlayData.autoRenewing === true;
       subscription.isTrialActive = false;
       subscription.trialEndDate = null;
       subscription.trialRedeemed = false;
@@ -803,9 +908,9 @@ export class SubscriptionsService {
         planId,
         plan,
         status: SubscriptionStatus.ACTIVE,
-        startDate: new Date(),
+        startDate: new Date(parseInt(googlePlayData.startTimeMillis)),
         expiryDate,
-        isAutoRenewal: true,
+        isAutoRenewal: googlePlayData.autoRenewing === true,
         isTrialActive: false,
         trialRedeemed: false,
       });
@@ -819,7 +924,7 @@ export class SubscriptionsService {
       relations: ['plan', 'user'],
     });
 
-    // Log payment with unique transaction ID
+    // Step 5: Log payment with unique transaction ID
     const uniqueTransactionId = `gp_${purchaseToken}_${Date.now()}`;
     const payment = await this.paymentsRepository.save({
       userId,
@@ -833,9 +938,26 @@ export class SubscriptionsService {
         purchaseToken,
         packageName,
         productId,
+        googlePlayData,
       },
       transactionId: uniqueTransactionId,
     } as any);
+
+    // Step 6: Log subscription action
+    await this.logSubscriptionHistory({
+      userId,
+      planId,
+      action: SubscriptionAction.PURCHASED,
+      reason: ActionReason.USER_REQUEST,
+      startDate: subscription.startDate,
+      expiryDate: subscription.expiryDate,
+      paymentId: payment.id,
+      notes: `Google Play purchase validated - ${plan.name}`,
+    });
+
+    this.logger.log(`✅ Subscription purchased for user ${userId} (validated with Google Play)`);
+    return subscription;
+  }
 
     // Log subscription action
     await this.logSubscriptionHistory({
