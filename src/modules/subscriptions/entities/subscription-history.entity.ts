@@ -63,7 +63,7 @@ export class SubscriptionHistory {
   @JoinColumn({ name: 'planId' })
   plan: SubscriptionPlan;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, name: 'previousPlanId' })
   previousPlanId: string;
 
   @ManyToOne(() => SubscriptionPlan, {
@@ -76,14 +76,14 @@ export class SubscriptionHistory {
   @Column({ type: 'varchar', length: 50 })
   action: SubscriptionAction;
 
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamp', name: 'startDate' })
   startDate: Date;
 
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamp', name: 'expiryDate' })
   expiryDate: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
-  oldExpiryDate: Date; // For extensions/renewals
+  @Column({ type: 'timestamp', nullable: true, name: 'oldExpiryDate' })
+  oldExpiryDate: Date;
 
   @Column({ type: 'varchar', nullable: true, length: 255 })
   reason: ActionReason;
@@ -91,8 +91,8 @@ export class SubscriptionHistory {
   @Column({ type: 'text', nullable: true })
   notes: string;
 
-  @Column({ type: 'uuid', nullable: true })
-  createdByUserId: string; // For admin actions
+  @Column({ type: 'uuid', nullable: true, name: 'createdByUserId' })
+  createdByUserId: string;
 
   @ManyToOne(() => User, {
     onDelete: 'SET NULL',
@@ -101,7 +101,7 @@ export class SubscriptionHistory {
   @JoinColumn({ name: 'createdByUserId' })
   createdByUser: User;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, name: 'paymentId' })
   paymentId: string;
 
   @ManyToOne(() => Payment, {
@@ -111,17 +111,7 @@ export class SubscriptionHistory {
   @JoinColumn({ name: 'paymentId' })
   payment: Payment;
 
-  @Column({ type: 'uuid', nullable: true })
-  userSubscriptionId: string;
-
-  @ManyToOne(() => UserSubscription, (subscription) => subscription.history, {
-    onDelete: 'CASCADE',
-    eager: false,
-  })
-  @JoinColumn({ name: 'userSubscriptionId' })
-  userSubscription: UserSubscription;
-
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'createdAt' })
   createdAt: Date;
 
   /**

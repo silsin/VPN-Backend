@@ -83,28 +83,28 @@ export class Payment {
   @Column({ type: 'varchar', default: PaymentStatus.PENDING })
   status: PaymentStatus;
 
-  @Column({ type: 'varchar', nullable: true, length: 255, unique: true })
-  transactionId: string; // External transaction ID from payment processor
+  @Column({ type: 'varchar', nullable: true, length: 255, unique: true, name: 'transactionId' })
+  transactionId: string;
 
-  @Column({ type: 'varchar', nullable: true, length: 255 })
+  @Column({ type: 'varchar', nullable: true, length: 255, name: 'failureReason' })
   failureReason: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, name: 'refundAmount' })
   refundAmount: number;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'refundedAt' })
   refundedAt: Date;
 
-  @Column({ type: 'varchar', nullable: true, length: 255 })
-  refundTransactionId: string; // External refund transaction ID
+  @Column({ type: 'varchar', nullable: true, length: 255, name: 'refundTransactionId' })
+  refundTransactionId: string;
 
   @Column({ type: 'jsonb', default: {} })
-  metadata: Record<string, any>; // {cardLast4, country, promoCode, etc.}
+  metadata: Record<string, any>;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updatedAt' })
   updatedAt: Date;
 
   /**

@@ -110,9 +110,6 @@ export class UserSubscription {
   @OneToMany(() => Payment, (payment) => payment.subscription)
   payments: Payment[];
 
-  @OneToMany(() => SubscriptionHistory, (history) => history.userSubscription)
-  history: SubscriptionHistory[];
-
   @CreateDateColumn()
   createdAt: Date;
 
