@@ -763,25 +763,24 @@ export class SubscriptionsService {
       throw new BadRequestException('This plan is no longer available');
     }
 
-    // Get or create subscription
+    // Get existing subscription (only one per user allowed)
     let subscription = await this.userSubscriptionsRepository.findOne({
-      where: { userId, planId },
+      where: { userId },
       relations: ['plan', 'user'],
     });
 
-    if (subscription) {
-      // Extend existing subscription
-      const newExpiryDate = new Date();
-      newExpiryDate.setDate(newExpiryDate.getDate() + plan.durationDays);
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + plan.durationDays);
 
-      subscription.expiryDate = newExpiryDate;
+    if (subscription) {
+      // Update existing subscription - extend expiry
+      subscription.planId = planId;
+      subscription.plan = plan;
+      subscription.expiryDate = expiryDate;
       subscription.status = SubscriptionStatus.ACTIVE;
       subscription.isAutoRenewal = true;
     } else {
       // Create new subscription
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + plan.durationDays);
-
       subscription = this.userSubscriptionsRepository.create({
         userId,
         planId,
@@ -798,7 +797,7 @@ export class SubscriptionsService {
 
     // Reload with relations
     subscription = await this.userSubscriptionsRepository.findOne({
-      where: { id: subscription.id },
+      where: { userId },
       relations: ['plan', 'user'],
     });
 
@@ -822,7 +821,6 @@ export class SubscriptionsService {
     // Log subscription action
     await this.logSubscriptionHistory({
       userId,
-      subscriptionId: subscription.id,
       planId,
       action: SubscriptionAction.PURCHASED,
       reason: ActionReason.USER_REQUEST,
