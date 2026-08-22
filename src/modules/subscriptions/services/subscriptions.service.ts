@@ -321,8 +321,7 @@ export class SubscriptionsService {
 
     const oldPlanId = currentSub.planId;
     const now = new Date();
-    const expiryDate = new Date(now);
-    expiryDate.setDate(expiryDate.getDate() + newPlan.durationDays);
+    const expiryDate = new Date(now.getTime() + newPlan.durationDays * 24 * 60 * 60 * 1000);
 
     // Update subscription
     currentSub.planId = newPlanId;
@@ -484,8 +483,7 @@ export class SubscriptionsService {
     }
 
     const oldExpiryDate = new Date(subscription.expiryDate);
-    const newExpiryDate = new Date(oldExpiryDate);
-    newExpiryDate.setDate(newExpiryDate.getDate() + days);
+    const newExpiryDate = new Date(oldExpiryDate.getTime() + days * 24 * 60 * 60 * 1000);
 
     subscription.expiryDate = newExpiryDate;
 

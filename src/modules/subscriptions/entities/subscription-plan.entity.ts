@@ -23,31 +23,31 @@ export class SubscriptionPlan {
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @Column({ type: 'int', nullable: true })
+  @Column({ type: 'int', nullable: true, name: 'duration_days' })
   durationDays: number; // NULL for free/unlimited plans
 
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   price: number;
 
-  @Column({ type: 'bigint', nullable: true })
+  @Column({ type: 'bigint', nullable: true, name: 'data_limit_gb' })
   dataLimitGb: number; // NULL for unlimited
 
-  @Column({ type: 'int', default: 1 })
+  @Column({ type: 'int', default: 1, name: 'max_devices' })
   maxDevices: number;
 
   @Column({ type: 'jsonb', default: [] })
   features: string[]; // Array of feature strings like ["premium_vpn", "ad_free"]
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'int', default: 0, name: 'display_order' })
   displayOrder: number;
 
-  @Column({ type: 'boolean', default: true })
+  @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'has_free_trial' })
   hasFreeTrial: boolean;
 
-  @Column({ type: 'int', nullable: true })
+  @Column({ type: 'int', nullable: true, name: 'trial_days' })
   trialDays: number; // Number of trial days (7, 14, etc.)
 
   @Column({ type: 'uuid', nullable: true })

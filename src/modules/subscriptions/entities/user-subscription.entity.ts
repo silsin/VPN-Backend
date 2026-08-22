@@ -56,64 +56,64 @@ export class UserSubscription {
   @Column({ type: 'varchar', default: SubscriptionStatus.ACTIVE })
   status: SubscriptionStatus;
 
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamp', name: 'startDate' })
   startDate: Date;
 
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamp', name: 'expiryDate' })
   expiryDate: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'renewalDate' })
   renewalDate: Date; // Next auto-renewal date
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'cancelledAt' })
   cancelledAt: Date;
 
-  @Column({ type: 'varchar', nullable: true, length: 255 })
+  @Column({ type: 'varchar', nullable: true, length: 255, name: 'cancelledReason' })
   cancelledReason: string;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'isAutoRenewal' })
   isAutoRenewal: boolean;
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'int', default: 0, name: 'failedRenewalAttempts' })
   failedRenewalAttempts: number;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'lastRenewalAttemptAt' })
   lastRenewalAttemptAt: Date;
 
   @Column({ type: 'jsonb', default: {} })
   metadata: Record<string, any>; // Store extra info (promo codes, discount %, etc.)
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'suspendedAt' })
   suspendedAt: Date; // When subscription was suspended
 
-  @Column({ type: 'varchar', nullable: true, length: 500 })
+  @Column({ type: 'varchar', nullable: true, length: 500, name: 'suspendedReason' })
   suspendedReason: string; // Reason for suspension
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', nullable: true, name: 'suspendedByAdminId' })
   suspendedByAdminId: string; // Admin who suspended, or null if automatic
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'pausedAt' })
   pausedAt: Date; // When subscription was paused
 
-  @Column({ type: 'varchar', nullable: true, length: 500 })
+  @Column({ type: 'varchar', nullable: true, length: 500, name: 'pausedReason' })
   pausedReason: string; // Reason for pause
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'is_trial_active' })
   isTrialActive: boolean;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp', nullable: true, name: 'trial_end_date' })
   trialEndDate: Date;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, name: 'trial_redeemed' })
   trialRedeemed: boolean; // Track if user already used trial
 
   @OneToMany(() => Payment, (payment) => payment.subscription)
   payments: Payment[];
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'createdAt' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updatedAt' })
   updatedAt: Date;
 
   /**

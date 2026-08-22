@@ -141,7 +141,7 @@ export class TrialService {
       subscription.trialRedeemed = true;
       subscription.status = SubscriptionStatus.ACTIVE;
       subscription.startDate = new Date();
-      subscription.expiryDate = trialEndDate;
+      subscription.expiryDate = new Date(trialEndDate); // Use copy, not reference
     } else {
       // Create new trial subscription
       subscription = new UserSubscription();
@@ -151,10 +151,10 @@ export class TrialService {
       subscription.status = SubscriptionStatus.ACTIVE;
       subscription.isAutoRenewal = true; // Auto-renew after trial
       subscription.isTrialActive = true;
-      subscription.trialEndDate = trialEndDate;
+      subscription.trialEndDate = new Date(trialEndDate); // Use copy
       subscription.trialRedeemed = true;
       subscription.startDate = new Date();
-      subscription.expiryDate = trialEndDate;
+      subscription.expiryDate = new Date(trialEndDate); // Use copy
     }
 
     await this.subscriptionRepository.save(subscription);
