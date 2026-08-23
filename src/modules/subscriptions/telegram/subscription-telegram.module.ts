@@ -17,6 +17,7 @@ import { SubscriptionsService } from '../services/subscriptions.service';
 import { UsageService } from '../services/usage.service';
 import { PaymentService } from '../services/payment.service';
 import { GooglePlayBillingService } from '../services/google-play-billing.service';
+import { GooglePlayBillingV2Service } from '../services/google-play-billing-v2.service';
 import { PayPalService } from '../services/paypal.service';
 import { NotificationService } from '../services/notification.service';
 import { EmailService } from '../services/email.service';
@@ -58,6 +59,7 @@ import { TrialService } from '../services/trial.service';
     SubscriptionsService,
     UsageService,
     PaymentService,
+    GooglePlayBillingV2Service,
     GooglePlayBillingService,
     PayPalService,
     NotificationService,
@@ -78,6 +80,7 @@ import { TrialService } from '../services/trial.service';
     UsageService,
     PaymentService,
     GooglePlayBillingService,
+    GooglePlayBillingV2Service,
     PayPalService,
     NotificationService,
     EmailService,
