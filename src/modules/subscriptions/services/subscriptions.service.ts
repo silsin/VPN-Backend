@@ -975,6 +975,7 @@ export class SubscriptionsService {
         await this.googlePlayBillingV2Service.acknowledgePurchase(
           packageName,
           purchaseToken,
+          verification.productId,
         );
       }
 

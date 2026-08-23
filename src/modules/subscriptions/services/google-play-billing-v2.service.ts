@@ -187,11 +187,11 @@ export class GooglePlayBillingV2Service {
   }
 
   /**
-   * Verify subscription using Google Play Subscriptions V2 API
+   * Verify subscription using Google Play API
    * 
    * @param packageName - App package name (must match configured value)
    * @param purchaseToken - Google Play purchase token
-   * @param productId - Product ID to validate (optional, for extra validation)
+   * @param productId - Product ID (subscription ID) to verify
    * @returns Verification result with subscription state and details
    */
   async verifySubscription(
@@ -219,20 +219,27 @@ export class GooglePlayBillingV2Service {
       );
     }
 
+    // productId is required for subscription verification
+    if (!productId) {
+      this.logger.error('❌ productId is required for subscription verification');
+      throw new BadRequestException('Product ID is required');
+    }
+
     try {
       this.logger.debug(
         `🔍 Verifying Google Play subscription: packageName=${packageName}, productId=${productId}, token_prefix=${purchaseToken.substring(0, 20)}...`,
       );
 
-      // Call subscriptions.get with proper V2 parameters
-      // Note: The endpoint is still "purchases.subscriptions" but returns V2-style data
+      // Call subscriptions.get with proper parameters
+      // For V2 data model, we still use the subscriptions endpoint
+      // but the response includes V2-style data with lineItems
       this.logger.debug(
-        `🔗 Calling Google Play API: purchases.subscriptions.get(packageName=${this.packageName}, subscriptionId=*, token=...)`,
+        `🔗 Calling Google Play API: purchases.subscriptions.get(packageName=${this.packageName}, subscriptionId=${productId}, token=...)`,
       );
 
       const response = await this.androidPublisher.purchases.subscriptions.get({
         packageName: this.packageName,
-        subscriptionId: '*', // V2 API: use '*' as wildcard to get all subscriptions
+        subscriptionId: productId || 'unknown', // Use the product ID as subscription ID
         token: purchaseToken,
       });
 
@@ -379,6 +386,7 @@ export class GooglePlayBillingV2Service {
   async acknowledgePurchase(
     packageName: string,
     purchaseToken: string,
+    productId?: string,
   ): Promise<boolean> {
     if (!this.enabled) {
       this.logger.warn('⚠️ Google Play Billing is not enabled');
@@ -391,15 +399,21 @@ export class GooglePlayBillingV2Service {
       return false;
     }
 
+    if (!productId) {
+      this.logger.warn('⚠️ productId required for acknowledgement');
+      return false;
+    }
+
     try {
       this.logger.debug(
-        `🔄 Acknowledging purchase: packageName=${packageName}, token_prefix=${purchaseToken.substring(0, 20)}...`,
+        `🔄 Acknowledging purchase: packageName=${packageName}, productId=${productId}, token_prefix=${purchaseToken.substring(0, 20)}...`,
       );
 
       // Check current acknowledgement state first
       const verification = await this.verifySubscription(
         packageName,
         purchaseToken,
+        productId,
       );
 
       if (
@@ -410,8 +424,9 @@ export class GooglePlayBillingV2Service {
       }
 
       // Acknowledge the purchase
-      await this.androidPublisher.purchases.subscriptionsv2.acknowledge({
+      await this.androidPublisher.purchases.subscriptions.acknowledge({
         packageName: this.packageName,
+        subscriptionId: productId,
         token: purchaseToken,
         requestBody: {},
       });
@@ -435,6 +450,7 @@ export class GooglePlayBillingV2Service {
   async getSubscriptionDetails(
     packageName: string,
     purchaseToken: string,
+    productId?: string,
   ): Promise<any> {
     if (!this.enabled) {
       throw new BadRequestException('Google Play Billing not enabled');
@@ -444,9 +460,14 @@ export class GooglePlayBillingV2Service {
       throw new UnauthorizedException('Invalid package name');
     }
 
+    if (!productId) {
+      throw new BadRequestException('Product ID is required');
+    }
+
     try {
-      const response = await this.androidPublisher.purchases.subscriptionsv2.get({
+      const response = await this.androidPublisher.purchases.subscriptions.get({
         packageName: this.packageName,
+        subscriptionId: productId,
         token: purchaseToken,
       });
 
