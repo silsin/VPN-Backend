@@ -230,11 +230,22 @@ export class GooglePlayBillingV2Service {
         `🔍 Verifying Google Play subscription: packageName=${packageName}, productId=${productId}, token_prefix=${purchaseToken.substring(0, 20)}...`,
       );
 
+      // Validate token format
+      if (!purchaseToken || purchaseToken.length < 10) {
+        this.logger.error(
+          `❌ Invalid purchase token format: ${purchaseToken}`,
+        );
+        return {
+          valid: false,
+          active: false,
+        };
+      }
+
       // Call subscriptions.get with proper parameters
       // For V2 data model, we still use the subscriptions endpoint
       // but the response includes V2-style data with lineItems
       this.logger.debug(
-        `🔗 Calling Google Play API: purchases.subscriptions.get(packageName=${this.packageName}, subscriptionId=${productId}, token=...)`,
+        `🔗 Calling Google Play API: purchases.subscriptions.get(packageName=${this.packageName}, subscriptionId=${productId}, token_length=${purchaseToken.length})`,
       );
 
       const response = await this.androidPublisher.purchases.subscriptions.get({
