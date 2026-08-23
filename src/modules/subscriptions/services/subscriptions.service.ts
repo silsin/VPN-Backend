@@ -838,18 +838,6 @@ export class SubscriptionsService {
         throw new BadRequestException('This plan is no longer available');
       }
 
-      // Step 4: Verify plan exists and is active
-      const plan = await this.plansRepository.findOne({ where: { id: planId } });
-      if (!plan) {
-        this.logger.error(`❌ Plan ${planId} not found`);
-        throw new NotFoundException(`Plan ${planId} not found`);
-      }
-
-      if (!plan.isActive) {
-        this.logger.error(`❌ Plan ${planId} is not active`);
-        throw new BadRequestException('This plan is no longer available');
-      }
-
       // Step 5: Verify product ID - log mismatch but don't fail
       // The important thing is the subscription is valid, not the exact product ID match
       if (verification.productId !== productId) {
