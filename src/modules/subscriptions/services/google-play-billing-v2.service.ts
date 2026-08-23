@@ -204,6 +204,11 @@ export class GooglePlayBillingV2Service {
       throw new BadRequestException('Google Play Billing not enabled');
     }
 
+    if (!this.androidPublisher) {
+      this.logger.error('❌ Android Publisher not initialized - check service account credentials');
+      throw new BadRequestException('Google Play service not initialized');
+    }
+
     // Validate package name matches configuration
     if (packageName.trim() !== this.packageName) {
       this.logger.warn(
@@ -226,6 +231,7 @@ export class GooglePlayBillingV2Service {
       });
 
       if (!response.data) {
+        this.logger.error('❌ Google Play returned empty response data');
         throw new Error('No data in Google Play response');
       }
 
@@ -336,10 +342,15 @@ export class GooglePlayBillingV2Service {
         `❌ Google Play verification failed (status=${statusCode}): ${errorMessage}`,
       );
 
+      // Log full error for debugging
+      if (error.errors && error.errors.length > 0) {
+        this.logger.error(`📋 Google API Error Details: ${JSON.stringify(error.errors)}`);
+      }
+
       // Map common Google API errors
       if (statusCode === 401 || statusCode === 403) {
         this.logger.error(
-          `⚠️ Check service account has necessary permissions in Google Play Console`,
+          `🔐 AUTHENTICATION/PERMISSION ERROR: Check service account has necessary permissions in Google Play Console. Make sure account has "Admin" or "Financial data" role.`,
         );
       }
 
