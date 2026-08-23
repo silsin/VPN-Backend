@@ -224,9 +224,15 @@ export class GooglePlayBillingV2Service {
         `🔍 Verifying Google Play subscription: packageName=${packageName}, productId=${productId}, token_prefix=${purchaseToken.substring(0, 20)}...`,
       );
 
-      // Call subscriptionsv2.get with token only (not subscriptionId)
-      const response = await this.androidPublisher.purchases.subscriptionsv2.get({
+      // Call subscriptions.get with proper V2 parameters
+      // Note: The endpoint is still "purchases.subscriptions" but returns V2-style data
+      this.logger.debug(
+        `🔗 Calling Google Play API: purchases.subscriptions.get(packageName=${this.packageName}, subscriptionId=*, token=...)`,
+      );
+
+      const response = await this.androidPublisher.purchases.subscriptions.get({
         packageName: this.packageName,
+        subscriptionId: '*', // V2 API: use '*' as wildcard to get all subscriptions
         token: purchaseToken,
       });
 
