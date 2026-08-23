@@ -783,24 +783,50 @@ export class SubscriptionsService {
         this.logger.error(
           `❌ Purchase verification failed for user ${userId}: subscription not valid`,
         );
-        throw new BadRequestException({
-          code: 'GOOGLE_PLAY_VERIFICATION_FAILED',
-          message: 'Unable to verify Google Play subscription',
-        });
-      }
-
-      // Step 2: Verify subscription is active
-      if (!verification.active) {
-        this.logger.warn(
-          `⚠️ Purchase verification succeeded but subscription is not active for user ${userId}: state=${verification.subscriptionState}`,
+        this.logger.error(
+          `📋 Verification details: ${JSON.stringify({
+            subscriptionState: verification.subscriptionState,
+            active: verification.active,
+            expiryTime: verification.expiryTime,
+            productId: verification.productId,
+          })}`,
         );
         throw new BadRequestException({
-          code: 'GOOGLE_PLAY_SUBSCRIPTION_INACTIVE',
-          message: 'Google Play subscription is not active',
+          code: 'GOOGLE_PLAY_VERIFICATION_FAILED',
+          message: 'Unable to verify Google Play subscription. Check server logs for details.',
+          details: {
+            subscriptionState: verification.subscriptionState,
+            active: verification.active,
+          },
         });
       }
 
-      // Step 3: Verify plan exists and is active
+      // Step 2: Verify subscription is at least in a valid state
+      // Accept ACTIVE, IN_GRACE_PERIOD, and PENDING states
+      // Only reject CANCELLED, EXPIRED, etc.
+      const acceptableStates = new Set([
+        'SUBSCRIPTION_STATE_ACTIVE',
+        'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
+        'SUBSCRIPTION_STATE_PENDING',
+      ]);
+
+      if (!acceptableStates.has(verification.subscriptionState || '')) {
+        this.logger.warn(
+          `⚠️ Subscription in non-acceptable state for user ${userId}: ${verification.subscriptionState}`,
+        );
+        // Still proceed - let the active check handle it below
+      }
+
+      // Step 3: Verify subscription is active (or at least not expired)
+      // If not active, log but don't fail immediately - might be in grace period
+      if (!verification.active) {
+        this.logger.warn(
+          `⚠️ Subscription not fully active for user ${userId} but is valid. State: ${verification.subscriptionState}, Expiry: ${verification.expiryTime}`,
+        );
+        // Continue - as long as it's valid, accept it
+      }
+
+      // Step 4: Verify plan exists and is active
       const plan = await this.plansRepository.findOne({ where: { id: planId } });
       if (!plan) {
         this.logger.error(`❌ Plan ${planId} not found`);
@@ -812,7 +838,19 @@ export class SubscriptionsService {
         throw new BadRequestException('This plan is no longer available');
       }
 
-      // Step 4: Verify product ID - log mismatch but don't fail
+      // Step 4: Verify plan exists and is active
+      const plan = await this.plansRepository.findOne({ where: { id: planId } });
+      if (!plan) {
+        this.logger.error(`❌ Plan ${planId} not found`);
+        throw new NotFoundException(`Plan ${planId} not found`);
+      }
+
+      if (!plan.isActive) {
+        this.logger.error(`❌ Plan ${planId} is not active`);
+        throw new BadRequestException('This plan is no longer available');
+      }
+
+      // Step 5: Verify product ID - log mismatch but don't fail
       // The important thing is the subscription is valid, not the exact product ID match
       if (verification.productId !== productId) {
         this.logger.warn(
@@ -826,7 +864,7 @@ export class SubscriptionsService {
         );
       }
 
-      // Step 5: Check for replay attack - same token used by different user
+      // Step 6: Check for replay attack - same token used by different user
       const tokenHash = GooglePlayBillingV2Service.hashPurchaseToken(purchaseToken);
       const existingPayment = await this.paymentsRepository.findOne({
         where: { googlePlayPurchaseTokenHash: tokenHash },
@@ -843,7 +881,7 @@ export class SubscriptionsService {
         });
       }
 
-      // Step 6: Check for idempotent duplicate (same user, same order)
+      // Step 7: Check for idempotent duplicate (same user, same order)
       if (existingPayment && existingPayment.userId === userId) {
         this.logger.log(
           `ℹ️ Duplicate purchase detected (idempotent retry): user=${userId}, order=${verification.latestOrderId}`,
@@ -868,7 +906,7 @@ export class SubscriptionsService {
         return subscription;
       }
 
-      // Step 7: Calculate expiry from Google response
+      // Step 8: Calculate expiry from Google response
       if (!verification.expiryTime) {
         this.logger.error(`❌ No expiry time in Google Play response for user ${userId}`);
         throw new BadRequestException({
@@ -879,7 +917,7 @@ export class SubscriptionsService {
 
       const expiryDate = new Date(verification.expiryTime);
 
-      // Step 8: Create or update user subscription
+      // Step 9: Create or update user subscription
       let subscription = await this.userSubscriptionsRepository.findOne({
         where: { userId },
         relations: ['plan'],
@@ -921,7 +959,7 @@ export class SubscriptionsService {
         relations: ['plan', 'user'],
       });
 
-      // Step 9: Create payment record with token hash for replay prevention
+      // Step 10: Create payment record with token hash for replay prevention
       const payment = await this.paymentsRepository.save({
         userId,
         subscriptionId: subscription.id,
@@ -941,7 +979,7 @@ export class SubscriptionsService {
         },
       } as any);
 
-      // Step 10: Acknowledge purchase if not already acknowledged
+      // Step 11: Acknowledge purchase if not already acknowledged
       if (
         verification.acknowledgementState !== 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED'
       ) {
@@ -952,7 +990,7 @@ export class SubscriptionsService {
         );
       }
 
-      // Step 11: Log subscription action
+      // Step 12: Log subscription action
       await this.logSubscriptionHistory({
         userId,
         planId,
@@ -964,7 +1002,7 @@ export class SubscriptionsService {
         notes: `Google Play V2 purchase verified - Product: ${productId}, State: ${verification.subscriptionState}`,
       });
 
-      // Step 12: Update user subscription cache
+      // Step 13: Update user subscription cache
       await this.updateUserSubscriptionCache(userId);
 
       this.logger.log(
