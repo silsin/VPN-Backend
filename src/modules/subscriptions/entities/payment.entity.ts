@@ -98,6 +98,15 @@ export class Payment {
   @Column({ type: 'varchar', nullable: true, length: 255, name: 'refundTransactionId' })
   refundTransactionId: string;
 
+  @Column({
+    type: 'varchar',
+    nullable: true,
+    length: 64,
+    name: 'googlePlayPurchaseTokenHash',
+    comment: 'SHA-256 hash of Google Play purchase token for replay attack prevention',
+  })
+  googlePlayPurchaseTokenHash: string;
+
   @Column({ type: 'jsonb', default: {} })
   metadata: Record<string, any>;
 

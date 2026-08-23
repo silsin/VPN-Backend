@@ -19,6 +19,7 @@ import { GiftCodeService } from './services/gift-code.service';
 import { PromoCodeService } from './services/promo-code.service';
 import { SubscriptionJobService } from './services/subscription-job.service';
 import { GooglePlayBillingService } from './services/google-play-billing.service';
+import { GooglePlayBillingV2Service } from './services/google-play-billing-v2.service';
 import { RefundService } from './services/refund.service';
 import { AuditLogService } from './services/audit-log.service';
 import { PauseService } from './services/pause.service';
@@ -91,6 +92,7 @@ import { UsersModule } from '../users/users.module';
     GiftCodeService,
     PromoCodeService,
     SubscriptionJobService,
+    GooglePlayBillingV2Service,
     GooglePlayBillingService,
     RefundService,
     AuditLogService,
@@ -120,6 +122,7 @@ import { UsersModule } from '../users/users.module';
     FeatureAccessGuard,
     DeviceLimitGuard,
     GooglePlayBillingService,
+    GooglePlayBillingV2Service,
     SubscriptionTelegramModule,
   ],
 })
