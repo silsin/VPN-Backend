@@ -234,30 +234,53 @@ export class GooglePlayBillingV2Service {
         `📨 Google Play V2 response received: subscriptionState=${data.subscriptionState}`,
       );
 
-      // Extract line item matching requested productId (if provided)
+      // Log available line items for debugging
+      const lineItemsCount = data.lineItems?.length || 0;
+      this.logger.debug(`📋 Available line items: ${lineItemsCount}`);
+      
+      const availableProductIds: string[] = [];
+      if (data.lineItems && data.lineItems.length > 0) {
+        data.lineItems.forEach((item: any, idx: number) => {
+          this.logger.debug(
+            `   [${idx}] productId: ${item.productId}, expiryTime: ${item.expiryTime}`,
+          );
+          availableProductIds.push(item.productId);
+        });
+      }
+
+      // Extract line item 
+      // Priority:
+      // 1. If productId specified, try to find it (but don't fail if not found - use first item instead)
+      // 2. Use first line item (purchase is tied to whatever product was actually bought)
       let lineItem = null;
+      
       if (productId) {
+        this.logger.debug(`🔍 Client requested productId: ${productId}`);
         lineItem = data.lineItems?.find(
           (item: any) => item.productId === productId,
         );
 
-        if (!lineItem) {
-          this.logger.warn(
-            `⚠️ Product ID "${productId}" not found in subscription line items`,
+        if (lineItem) {
+          this.logger.debug(
+            `✅ Found requested product "${productId}" in line items`,
           );
-          return {
-            valid: false,
-            active: false,
-            raw: data,
-          };
+        } else {
+          // Product not found in line items - this is OK, use the actual purchased item
+          this.logger.warn(
+            `⚠️ Requested productId "${productId}" not found, but subscription has items: ${availableProductIds.join(', ')}. Using actual purchased item.`,
+          );
+          lineItem = data.lineItems?.[0];
         }
       } else {
-        // Use first line item if no productId specified
+        // No specific product requested, use first item
+        this.logger.debug('ℹ️ No productId specified, using first line item');
         lineItem = data.lineItems?.[0];
       }
 
       if (!lineItem) {
-        this.logger.warn('⚠️ No line items found in subscription');
+        this.logger.error(
+          `❌ No line items found in subscription response`,
+        );
         return {
           valid: false,
           active: false,
