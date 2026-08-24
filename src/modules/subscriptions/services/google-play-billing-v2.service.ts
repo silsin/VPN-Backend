@@ -267,101 +267,89 @@ export class GooglePlayBillingV2Service {
       }
 
       const data = response.data;
+
+      // Log full response for debugging
       this.logger.debug(
-        `📨 Google Play V2 response received: subscriptionState=${data.subscriptionState}`,
+        `📨 Google Play response: ${JSON.stringify({
+          kind: data.kind,
+          orderId: data.orderId,
+          paymentState: data.paymentState,
+          acknowledgementState: data.acknowledgementState,
+          expiryTimeMillis: data.expiryTimeMillis,
+          startTimeMillis: data.startTimeMillis,
+          autoRenewing: data.autoRenewing,
+          cancelReason: data.cancelReason,
+        })}`,
       );
 
-      // Log available line items for debugging
-      const lineItemsCount = data.lineItems?.length || 0;
-      this.logger.debug(`📋 Available line items: ${lineItemsCount}`);
-      
-      const availableProductIds: string[] = [];
-      if (data.lineItems && data.lineItems.length > 0) {
-        data.lineItems.forEach((item: any, idx: number) => {
-          this.logger.debug(
-            `   [${idx}] productId: ${item.productId}, expiryTime: ${item.expiryTime}`,
-          );
-          availableProductIds.push(item.productId);
-        });
-      }
+      // purchases.subscriptions.get returns V1 format:
+      // - expiryTimeMillis (not expiryTime)
+      // - paymentState (0=pending, 1=paid, 2=free trial, 3=deferred)
+      // - acknowledgementState (0=not ack, 1=acknowledged)
+      // - orderId
+      // - cancelReason (if cancelled)
 
-      // Extract line item 
-      // Priority:
-      // 1. If productId specified, try to find it (but don't fail if not found - use first item instead)
-      // 2. Use first line item (purchase is tied to whatever product was actually bought)
-      let lineItem = null;
-      
-      if (productId) {
-        this.logger.debug(`🔍 Client requested productId: ${productId}`);
-        lineItem = data.lineItems?.find(
-          (item: any) => item.productId === productId,
-        );
+      const expiryTimeMillis = data.expiryTimeMillis
+        ? parseInt(data.expiryTimeMillis, 10)
+        : 0;
 
-        if (lineItem) {
-          this.logger.debug(
-            `✅ Found requested product "${productId}" in line items`,
-          );
-        } else {
-          // Product not found in line items - this is OK, use the actual purchased item
-          this.logger.warn(
-            `⚠️ Requested productId "${productId}" not found, but subscription has items: ${availableProductIds.join(', ')}. Using actual purchased item.`,
-          );
-          lineItem = data.lineItems?.[0];
-        }
+      const expiryTime = expiryTimeMillis
+        ? new Date(expiryTimeMillis).toISOString()
+        : null;
+
+      const notExpired = expiryTimeMillis > Date.now();
+
+      // paymentState: 0=pending, 1=paid, 2=free trial, 3=pending deferred
+      const paymentState = data.paymentState;
+      const isPaid = paymentState === 1 || paymentState === 2; // paid or free trial
+
+      // cancelReason presence means it was cancelled
+      const isCancelled = data.cancelReason !== undefined && data.cancelReason !== null;
+
+      // Determine active status
+      const isActive = isPaid && notExpired && !isCancelled;
+
+      // Map V1 paymentState to a V2-style state string for consistency
+      let subscriptionState: string;
+      if (isCancelled) {
+        subscriptionState = 'SUBSCRIPTION_STATE_CANCELED';
+      } else if (!notExpired) {
+        subscriptionState = 'SUBSCRIPTION_STATE_EXPIRED';
+      } else if (paymentState === 0) {
+        subscriptionState = 'SUBSCRIPTION_STATE_PENDING';
+      } else if (paymentState === 1) {
+        subscriptionState = 'SUBSCRIPTION_STATE_ACTIVE';
+      } else if (paymentState === 2) {
+        subscriptionState = 'SUBSCRIPTION_STATE_ACTIVE'; // free trial = active
       } else {
-        // No specific product requested, use first item
-        this.logger.debug('ℹ️ No productId specified, using first line item');
-        lineItem = data.lineItems?.[0];
+        subscriptionState = 'SUBSCRIPTION_STATE_UNSPECIFIED';
       }
 
-      if (!lineItem) {
-        this.logger.error(
-          `❌ No line items found in subscription response`,
-        );
-        return {
-          valid: false,
-          active: false,
-          raw: data,
-        };
-      }
-
-      // Determine if subscription is active based on state
-      const subscriptionState = data.subscriptionState || '';
-      const activeStates = new Set([
-        'SUBSCRIPTION_STATE_ACTIVE',
-        'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
-      ]);
-
-      const isActiveByState = activeStates.has(subscriptionState);
-      this.logger.debug(
-        `📊 Subscription state: ${subscriptionState}, Active: ${isActiveByState}`,
-      );
-
-      // Check expiry time
-      const expiryTime = lineItem.expiryTime;
-      const notExpired =
-        !!expiryTime && new Date(expiryTime).getTime() > Date.now();
+      // acknowledgementState: 0=not acknowledged, 1=acknowledged
+      const acknowledgementStateRaw = data.acknowledgementState;
+      const acknowledgementState =
+        acknowledgementStateRaw === 1
+          ? 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED'
+          : 'ACKNOWLEDGEMENT_STATE_PENDING';
 
       this.logger.debug(
-        `⏱️ Expiry time: ${expiryTime}, Not expired: ${notExpired}`,
+        `📊 V1 Response parsed: state=${subscriptionState}, active=${isActive}, notExpired=${notExpired}, paymentState=${paymentState}, expiryTime=${expiryTime}`,
       );
-
-      const isActive = isActiveByState && notExpired;
 
       const result: GooglePlaySubscriptionVerification = {
         valid: true,
         active: isActive,
         subscriptionState,
         expiryTime,
-        productId: lineItem.productId,
-        orderId: data.latestOrderId,
-        latestOrderId: data.latestOrderId,
-        acknowledgementState: data.acknowledgementState,
+        productId,  // use the productId we sent (V1 doesn't return lineItems)
+        orderId: data.orderId,
+        latestOrderId: data.orderId,
+        acknowledgementState,
         raw: data,
       };
 
       this.logger.debug(
-        `✅ Verification result: valid=${result.valid}, active=${result.active}`,
+        `✅ Verification result: valid=${result.valid}, active=${result.active}, state=${result.subscriptionState}`,
       );
 
       return result;
