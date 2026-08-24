@@ -233,12 +233,19 @@ export class GooglePlayBillingV2Service {
       // Validate token format
       if (!purchaseToken || purchaseToken.length < 10) {
         this.logger.error(
-          `❌ Invalid purchase token format: ${purchaseToken}`,
+          `❌ Invalid purchase token format. Length: ${purchaseToken?.length || 0}. Full token: ${purchaseToken}`,
         );
         return {
           valid: false,
           active: false,
         };
+      }
+
+      // Additional token validation
+      if (!purchaseToken.startsWith('GPA.')) {
+        this.logger.warn(
+          `⚠️ Token doesn't start with 'GPA.'. Actual prefix: ${purchaseToken.substring(0, 10)}`,
+        );
       }
 
       // Call subscriptions.get with proper parameters

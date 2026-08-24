@@ -304,6 +304,37 @@ export class SubscriptionsController {
         throw new BadRequestException('paymentMethod is required');
       }
 
+      // Debug logging for Google Play purchases
+      if (body.paymentMethod === 'google_play' && body.googlePlayDetails) {
+        const token = body.googlePlayDetails.purchaseToken;
+        this.logger.log(`
+🔍 DEBUG: Google Play Purchase Request Received
+- Full Token: ${token}
+- Token length: ${token?.length || 0} chars (expected: 500+)
+- Token prefix (first 100): ${token?.substring(0, 100) || 'NONE'}
+- Product ID: ${body.googlePlayDetails.productId}
+- Package Name: ${body.googlePlayDetails.packageName}
+- Plan ID: ${body.planId}
+- Request body size: ${JSON.stringify(body).length} bytes
+        `);
+
+        // Validate token length
+        if (!token || token.length < 100) {
+          this.logger.error(
+            `❌ CRITICAL: Purchase token too short! Length: ${token?.length || 0}. This indicates the Flutter app is not sending a valid purchase token. Full token received: ${token}`,
+          );
+          throw new BadRequestException({
+            code: 'INVALID_PURCHASE_TOKEN',
+            message: `Purchase token is invalid. Length: ${token?.length || 0}. Expected 500+. Check Flutter app implementation.`,
+            details: {
+              tokenLength: token?.length || 0,
+              expectedLength: 500,
+              tokenReceived: token?.substring(0, 50),
+            },
+          });
+        }
+      }
+
       let subscription;
 
       if (body.paymentMethod === 'google_play') {
