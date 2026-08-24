@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThan, LessThan, LessThanOrEqual } from 'typeorm';
 import { SubscriptionPlan } from '../entities/subscription-plan.entity';
@@ -895,15 +896,40 @@ export class SubscriptionsService {
       }
 
       // Step 8: Calculate expiry from Google response
-      if (!verification.expiryTime) {
-        this.logger.error(`❌ No expiry time in Google Play response for user ${userId}`);
-        throw new BadRequestException({
-          code: 'GOOGLE_PLAY_INVALID_RESPONSE',
-          message: 'Invalid Google Play subscription data',
-        });
+      const now = new Date();
+      let expiryDate: Date;
+
+      if (verification.expiryTime) {
+        const googleExpiry = new Date(verification.expiryTime);
+        const minExpiry = new Date(now.getTime() + 23 * 60 * 60 * 1000); // at least ~1 day from now
+
+        if (googleExpiry > minExpiry) {
+          // Google returned a valid future expiry
+          expiryDate = googleExpiry;
+          this.logger.debug(
+            `📅 Using Google Play expiry date: ${expiryDate.toISOString()}`,
+          );
+        } else {
+          // Google returned a past/same-day expiry (can happen with pending purchases or clock skew)
+          // Fall back to plan duration
+          this.logger.warn(
+            `⚠️ Google Play expiryTime is not sufficiently in the future (${googleExpiry.toISOString()}). Falling back to plan duration of ${plan.durationDays} days.`,
+          );
+          expiryDate = new Date(now);
+          expiryDate.setDate(expiryDate.getDate() + (plan.durationDays || 30));
+        }
+      } else {
+        // No expiry time from Google - use plan duration as fallback
+        this.logger.warn(
+          `⚠️ No expiry time in Google Play response for user ${userId}. Falling back to plan duration of ${plan.durationDays} days.`,
+        );
+        expiryDate = new Date(now);
+        expiryDate.setDate(expiryDate.getDate() + (plan.durationDays || 30));
       }
 
-      const expiryDate = new Date(verification.expiryTime);
+      this.logger.log(
+        `📅 Subscription expiry for user ${userId}: ${expiryDate.toISOString()} (Google expiryTime was: ${verification.expiryTime ?? 'null'})`,
+      );
 
       // Step 9: Create or update user subscription
       let subscription = await this.userSubscriptionsRepository.findOne({
@@ -915,6 +941,7 @@ export class SubscriptionsService {
         // Update existing subscription
         subscription.planId = planId;
         subscription.status = SubscriptionStatus.ACTIVE;
+        subscription.startDate = now;
         subscription.expiryDate = expiryDate;
         subscription.isAutoRenewal = true;
         subscription.isTrialActive = false;
@@ -932,6 +959,7 @@ export class SubscriptionsService {
           userId,
           planId,
           status: SubscriptionStatus.ACTIVE,
+          startDate: now,
           expiryDate,
           isAutoRenewal: true,
           isTrialActive: false,
@@ -961,6 +989,7 @@ export class SubscriptionsService {
         metadata: {
           packageName,
           productId,
+          purchaseToken,          // stored for periodic re-verification
           subscriptionState: verification.subscriptionState,
           acknowledgementState: verification.acknowledgementState,
           latestOrderId: verification.latestOrderId,
@@ -1015,6 +1044,291 @@ export class SubscriptionsService {
         message: 'Failed to process Google Play purchase',
       });
     }
+  }
+
+  // ============ GOOGLE PLAY RTDN HANDLER ============
+
+  /**
+   * Handle a Google Play Real-time Developer Notification.
+   * Called from the webhook endpoint after Pub/Sub decoding.
+   *
+   * Flow:
+   * 1. Find the user by purchase token hash stored in payments table
+   * 2. Re-verify current subscription state directly from Google
+   * 3. Update local subscription based on authoritative Google state
+   */
+  async handleGooglePlayRTDN(
+    packageName: string,
+    purchaseToken: string,
+    notificationType: string,
+  ): Promise<void> {
+    if (!purchaseToken) {
+      this.logger.warn('⚠️ RTDN: no purchaseToken in notification, skipping');
+      return;
+    }
+
+    this.logger.log(
+      `🔔 RTDN processing: type=${notificationType}, token_prefix=${purchaseToken.substring(0, 20)}...`,
+    );
+
+    // 1. Find which user owns this purchase token via hash
+    const tokenHash = GooglePlayBillingV2Service.hashPurchaseToken(purchaseToken);
+    const payment = await this.paymentsRepository.findOne({
+      where: {
+        googlePlayPurchaseTokenHash: tokenHash,
+        paymentMethod: PaymentMethod.GOOGLE_PLAY,
+      },
+    });
+
+    if (!payment) {
+      this.logger.warn(
+        `⚠️ RTDN: no payment found for token hash. Notification type: ${notificationType}. This may be a purchase made before token hashing was added.`,
+      );
+      return;
+    }
+
+    const userId = payment.userId;
+    this.logger.log(`🔍 RTDN: found user=${userId} for notification type=${notificationType}`);
+
+    // 2. For cancellation/revocation/expiry: handle immediately without re-verifying
+    //    For others: re-verify with Google to get authoritative state
+    const immediateRevokeTypes = new Set([
+      'SUBSCRIPTION_REVOKED',
+      'SUBSCRIPTION_VOIDED',
+    ]);
+
+    const cancelTypes = new Set([
+      'SUBSCRIPTION_CANCELED',
+      'SUBSCRIPTION_EXPIRED',
+      'SUBSCRIPTION_REVOKED',
+      'SUBSCRIPTION_VOIDED',
+    ]);
+
+    const holdTypes = new Set([
+      'SUBSCRIPTION_ON_HOLD',
+      'SUBSCRIPTION_PAUSED',
+    ]);
+
+    const reactivateTypes = new Set([
+      'SUBSCRIPTION_RECOVERED',
+      'SUBSCRIPTION_RENEWED',
+      'SUBSCRIPTION_RESTARTED',
+      'SUBSCRIPTION_IN_GRACE_PERIOD',
+    ]);
+
+    // 3. Re-verify with Google to get authoritative current state
+    //    (Don't rely solely on notification type - Google recommends always re-fetching)
+    let verification = null;
+
+    // For voided/revoked we don't need to re-verify - act immediately
+    if (!immediateRevokeTypes.has(notificationType)) {
+      try {
+        verification = await this.googlePlayBillingV2Service.verifySubscription(
+          packageName,
+          purchaseToken,
+          payment.metadata?.productId,
+        );
+        this.logger.log(
+          `📊 RTDN re-verify: state=${verification.subscriptionState}, active=${verification.active}, expiry=${verification.expiryTime}`,
+        );
+      } catch (err) {
+        this.logger.error(`⚠️ RTDN: could not re-verify with Google: ${err.message}. Will use notification type to determine action.`);
+      }
+    }
+
+    // 4. Load subscription
+    const subscription = await this.userSubscriptionsRepository.findOne({
+      where: { userId },
+      relations: ['plan'],
+    });
+
+    if (!subscription) {
+      this.logger.warn(`⚠️ RTDN: no subscription found for user=${userId}`);
+      return;
+    }
+
+    // 5. Apply state update based on notification + verification
+    if (immediateRevokeTypes.has(notificationType)) {
+      // Refund / voided - revoke immediately regardless of expiry date
+      this.logger.log(`🚨 RTDN: REVOKE subscription for user=${userId} (${notificationType})`);
+      subscription.status = SubscriptionStatus.CANCELLED;
+      subscription.cancelledAt = new Date();
+      subscription.cancelledReason = `Google Play: ${notificationType}`;
+      subscription.isAutoRenewal = false;
+      // Mark payment as refunded
+      payment.status = PaymentStatus.REFUNDED;
+      payment.refundedAt = new Date();
+      await this.paymentsRepository.save(payment);
+
+    } else if (cancelTypes.has(notificationType)) {
+      if (verification && verification.active) {
+        // Google says still active (cancelled but within paid period) - keep active
+        this.logger.log(
+          `ℹ️ RTDN: ${notificationType} but Google says still active until ${verification.expiryTime}. Keeping active, disabling auto-renewal.`,
+        );
+        subscription.isAutoRenewal = false;
+        subscription.cancelledReason = `Google Play: ${notificationType} (active until ${verification.expiryTime})`;
+      } else {
+        // Truly cancelled/expired
+        this.logger.log(`❌ RTDN: cancel subscription for user=${userId} (${notificationType})`);
+        subscription.status = notificationType === 'SUBSCRIPTION_EXPIRED'
+          ? SubscriptionStatus.EXPIRED
+          : SubscriptionStatus.CANCELLED;
+        subscription.cancelledAt = new Date();
+        subscription.cancelledReason = `Google Play: ${notificationType}`;
+        subscription.isAutoRenewal = false;
+      }
+
+    } else if (holdTypes.has(notificationType)) {
+      this.logger.log(`⏸️ RTDN: suspend subscription for user=${userId} (${notificationType})`);
+      subscription.status = SubscriptionStatus.SUSPENDED;
+      subscription.suspendedAt = new Date();
+      subscription.suspendedReason = `Google Play: ${notificationType}`;
+
+    } else if (reactivateTypes.has(notificationType)) {
+      // Re-verify says active? Restore subscription
+      if (verification && verification.active && verification.expiryTime) {
+        this.logger.log(`✅ RTDN: reactivate subscription for user=${userId} (${notificationType})`);
+        subscription.status = SubscriptionStatus.ACTIVE;
+        subscription.expiryDate = new Date(verification.expiryTime);
+        subscription.cancelledAt = null;
+        subscription.cancelledReason = null;
+        subscription.suspendedAt = null;
+        subscription.suspendedReason = null;
+        subscription.isAutoRenewal = true;
+      } else {
+        this.logger.warn(
+          `⚠️ RTDN: ${notificationType} but Google verification says NOT active. Not reactivating.`,
+        );
+      }
+
+    } else {
+      this.logger.log(`ℹ️ RTDN: no action taken for notification type=${notificationType}`);
+      return;
+    }
+
+    // 6. Save and update user cache
+    await this.userSubscriptionsRepository.save(subscription);
+    await this.updateUserSubscriptionCache(userId);
+
+    this.logger.log(
+      `✅ RTDN processed: user=${userId}, type=${notificationType}, newStatus=${subscription.status}`,
+    );
+
+    // 7. Log subscription history
+    await this.logSubscriptionHistory({
+      userId,
+      planId: subscription.planId,
+      action: SubscriptionAction.CANCELLED,
+      reason: ActionReason.AUTO_RENEWAL,
+      startDate: subscription.startDate,
+      expiryDate: subscription.expiryDate,
+      notes: `Google Play RTDN: ${notificationType}`,
+    });
+  }
+
+  // ============ PERIODIC GOOGLE PLAY SUBSCRIPTION CHECK ============
+
+  /**
+   * Every 6 hours: re-verify all active Google Play subscriptions.
+   * Catches cases where RTDN was missed (refund, cancellation, expiry).
+   */
+  @Cron(CronExpression.EVERY_6_HOURS)
+  async checkActiveGooglePlaySubscriptions(): Promise<void> {
+    if (!this.googlePlayBillingV2Service.isEnabled()) return;
+
+    this.logger.log('🔄 Starting periodic Google Play subscription check...');
+
+    // Find all active subscriptions that have a Google Play payment
+    const googlePlayPayments = await this.paymentsRepository.find({
+      where: {
+        paymentMethod: PaymentMethod.GOOGLE_PLAY,
+        status: PaymentStatus.COMPLETED,
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!googlePlayPayments.length) {
+      this.logger.log('ℹ️ No active Google Play payments to check');
+      return;
+    }
+
+    // De-duplicate by userId - only check the latest payment per user
+    const latestByUser = new Map<string, typeof googlePlayPayments[0]>();
+    for (const p of googlePlayPayments) {
+      if (!latestByUser.has(p.userId)) {
+        latestByUser.set(p.userId, p);
+      }
+    }
+
+    this.logger.log(`🔍 Checking ${latestByUser.size} Google Play subscriptions...`);
+
+    let revoked = 0;
+    let ok = 0;
+    let errors = 0;
+
+    for (const [userId, payment] of latestByUser) {
+      try {
+        const subscription = await this.userSubscriptionsRepository.findOne({
+          where: { userId },
+        });
+
+        // Only check subscriptions that are currently active
+        if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) continue;
+
+        const productId = payment.metadata?.productId;
+        const packageName = this.googlePlayBillingV2Service.getPackageName();
+
+        // We need the raw purchase token - stored in metadata
+        const purchaseToken = payment.metadata?.purchaseToken;
+        if (!purchaseToken) {
+          this.logger.debug(`⚠️ No raw purchase token in metadata for user=${userId}, skipping`);
+          continue;
+        }
+
+        const verification = await this.googlePlayBillingV2Service.verifySubscription(
+          packageName,
+          purchaseToken,
+          productId,
+        );
+
+        if (!verification.valid || !verification.active) {
+          this.logger.warn(
+            `🚨 Periodic check: subscription INVALID for user=${userId}. State=${verification.subscriptionState}. Revoking.`,
+          );
+
+          subscription.status = SubscriptionStatus.CANCELLED;
+          subscription.cancelledAt = new Date();
+          subscription.cancelledReason = `Google Play periodic check: ${verification.subscriptionState || 'invalid'}`;
+          subscription.isAutoRenewal = false;
+
+          await this.userSubscriptionsRepository.save(subscription);
+          await this.updateUserSubscriptionCache(userId);
+          revoked++;
+        } else {
+          // Subscription is valid - update expiry date if it changed (renewal)
+          if (verification.expiryTime) {
+            const googleExpiry = new Date(verification.expiryTime);
+            if (googleExpiry.getTime() !== subscription.expiryDate.getTime()) {
+              this.logger.log(
+                `🔄 Periodic check: updating expiry for user=${userId}: ${subscription.expiryDate.toISOString()} → ${googleExpiry.toISOString()}`,
+              );
+              subscription.expiryDate = googleExpiry;
+              await this.userSubscriptionsRepository.save(subscription);
+              await this.updateUserSubscriptionCache(userId);
+            }
+          }
+          ok++;
+        }
+      } catch (err) {
+        this.logger.error(`❌ Periodic check error for user=${userId}: ${err.message}`);
+        errors++;
+      }
+    }
+
+    this.logger.log(
+      `✅ Periodic Google Play check complete: ok=${ok}, revoked=${revoked}, errors=${errors}`,
+    );
   }
 }
 

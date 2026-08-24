@@ -40,7 +40,7 @@ export class WafMiddleware implements NestMiddleware {
     // 1. Check User-Agent for bots
     const userAgent = (req.headers['user-agent'] || '').toLowerCase();
     if (this.isBot(userAgent)) {
-      this.logger.warn(`Blocked Bot: ${userAgent} - IP: ${req.ip}`);
+      //this.logger.warn(`Blocked Bot: ${userAgent} - IP: ${req.ip}`);
       throw new HttpException('Access Denied (Bot detected)', HttpStatus.FORBIDDEN);
     }
 
@@ -70,27 +70,27 @@ export class WafMiddleware implements NestMiddleware {
 
       const sqlAttack = this.checkAttack(lowerInput, 'SQL');
       if (sqlAttack) {
-          this.logger.warn(`SQL Injection Attempt detected. Trigger: "${sqlAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
+          //this.logger.warn(`SQL Injection Attempt detected. Trigger: "${sqlAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (SQL Checks)', HttpStatus.FORBIDDEN);
       }
       const xssAttack = this.checkAttack(lowerInput, 'XSS');
       if (xssAttack) {
-          this.logger.warn(`XSS Attempt detected. Trigger: "${xssAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
+         // this.logger.warn(`XSS Attempt detected. Trigger: "${xssAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (XSS Checks)', HttpStatus.FORBIDDEN);
       }
       const lfiAttack = this.checkAttack(lowerInput, 'LFI');
       if (lfiAttack) {
-          this.logger.warn(`LFI Attempt detected. Trigger: "${lfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
+         // this.logger.warn(`LFI Attempt detected. Trigger: "${lfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (LFI Checks)', HttpStatus.FORBIDDEN);
       }
       const rfiAttack = this.checkRfiAttack(lowerInput, input.key);
       if (rfiAttack) {
-         this.logger.warn(`RFI Attempt detected. Trigger: "${rfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
+       //  this.logger.warn(`RFI Attempt detected. Trigger: "${rfiAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
          throw new HttpException('Access Denied (RFI Checks)', HttpStatus.FORBIDDEN);
       }
       const rceAttack = this.checkAttack(lowerInput, 'RCE');
       if (rceAttack) {
-          this.logger.warn(`RCE Attempt detected. Trigger: "${rceAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
+        //  this.logger.warn(`RCE Attempt detected. Trigger: "${rceAttack}" - Input: ${lowerInput.substring(0, 50)}... - IP: ${req.ip}`);
           throw new HttpException('Access Denied (RCE Checks)', HttpStatus.FORBIDDEN);
       }
     }

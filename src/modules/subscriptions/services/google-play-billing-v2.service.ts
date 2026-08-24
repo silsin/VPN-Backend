@@ -289,15 +289,18 @@ export class GooglePlayBillingV2Service {
       // - orderId
       // - cancelReason (if cancelled)
 
-      const expiryTimeMillis = data.expiryTimeMillis
-        ? parseInt(data.expiryTimeMillis, 10)
-        : 0;
+      const expiryTimeMillis =
+        data.expiryTimeMillis != null
+          ? parseInt(data.expiryTimeMillis, 10)
+          : 0;
 
-      const expiryTime = expiryTimeMillis
+      const isValidExpiry = expiryTimeMillis > 0 && !isNaN(expiryTimeMillis);
+
+      const expiryTime = isValidExpiry
         ? new Date(expiryTimeMillis).toISOString()
         : null;
 
-      const notExpired = expiryTimeMillis > Date.now();
+      const notExpired = isValidExpiry && expiryTimeMillis > Date.now();
 
       // paymentState: 0=pending, 1=paid, 2=free trial, 3=pending deferred
       const paymentState = data.paymentState;

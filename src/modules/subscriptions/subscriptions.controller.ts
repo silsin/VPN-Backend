@@ -369,100 +369,109 @@ export class SubscriptionsController {
     }
   }
 
-  // ============ GOOGLE PLAY WEBHOOK ============
+  // ============ GOOGLE PLAY RTDN WEBHOOK ============
+  // Google sends Pub/Sub messages here when a subscription changes.
+  // Configure this URL in Google Play Console → Monetize → Subscriptions → Real-time notifications
+  // Pub/Sub topic must be set to POST to: https://your-domain.com/subscriptions/google-play-webhook
 
   @Post('google-play-webhook')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Google Play subscription webhook (notifications)' })
+  @ApiOperation({ summary: 'Google Play Real-time Developer Notifications (Pub/Sub)' })
   async handleGooglePlayWebhook(@Body() body: any) {
     try {
-      const { userId, notificationType, purchaseToken } = body;
+      // Google Pub/Sub sends: { message: { data: "<base64>", messageId, publishTime }, subscription }
+      const pubsubMessage = body?.message;
 
-      if (!userId || !notificationType) {
-        throw new BadRequestException('Invalid webhook payload');
+      if (!pubsubMessage?.data) {
+        // Some health-check pings have no data - always return 200 so Pub/Sub stops retrying
+        this.logger.warn('⚠️ Google Play RTDN: received message with no data');
+        return { success: true };
       }
 
-      // Handle different notification types
-      switch (notificationType) {
-        case 'SUBSCRIPTION_CANCELED':
-          await this.handleSubscriptionCancelled(userId);
-          break;
-        case 'SUBSCRIPTION_RECOVERED':
-          await this.handleSubscriptionRecovered(userId);
-          break;
-        case 'SUBSCRIPTION_EXPIRED':
-          await this.handleSubscriptionExpired(userId);
-          break;
-        case 'SUBSCRIPTION_ON_HOLD':
-          await this.handleSubscriptionOnHold(userId);
-          break;
-        case 'SUBSCRIPTION_IN_GRACE_PERIOD':
-          await this.handleSubscriptionGracePeriod(userId);
-          break;
-        default:
-          this.logger.warn(`Unknown Google Play notification: ${notificationType}`);
+      // Decode base64 → JSON
+      let notification: any;
+      try {
+        const decoded = Buffer.from(pubsubMessage.data, 'base64').toString('utf-8');
+        notification = JSON.parse(decoded);
+      } catch (e) {
+        this.logger.error(`❌ Failed to decode Pub/Sub message: ${e.message}`);
+        return { success: true }; // Return 200 to avoid Pub/Sub retry loop
       }
 
-      return { success: true, message: 'Webhook processed' };
+      this.logger.log(
+        `📬 Google Play RTDN received: ${JSON.stringify({
+          packageName: notification.packageName,
+          subscriptionNotification: notification.subscriptionNotification,
+          voidedPurchaseNotification: notification.voidedPurchaseNotification,
+          testNotification: notification.testNotification,
+        })}`,
+      );
+
+      // Handle test notification (sent when you first configure RTDN)
+      if (notification.testNotification) {
+        this.logger.log('✅ Google Play RTDN test notification received successfully');
+        return { success: true };
+      }
+
+      const packageName = notification.packageName;
+      const subNotif = notification.subscriptionNotification;
+      const voidedNotif = notification.voidedPurchaseNotification;
+
+      // Handle voided purchase (refund)
+      if (voidedNotif) {
+        const { purchaseToken, productType } = voidedNotif;
+        this.logger.log(
+          `🔄 Voided purchase notification: productType=${productType}, token_prefix=${purchaseToken?.substring(0, 20)}`,
+        );
+        await this.subscriptionsService.handleGooglePlayRTDN(
+          packageName,
+          purchaseToken,
+          'SUBSCRIPTION_VOIDED',
+        );
+        return { success: true };
+      }
+
+      // Handle subscription notification
+      if (subNotif) {
+        const { notificationType, purchaseToken, subscriptionId } = subNotif;
+
+        // Map numeric notificationType to string
+        // https://developer.android.com/google/play/billing/rtdn-reference
+        const typeMap: Record<number, string> = {
+          1:  'SUBSCRIPTION_RECOVERED',
+          2:  'SUBSCRIPTION_RENEWED',
+          3:  'SUBSCRIPTION_CANCELED',
+          4:  'SUBSCRIPTION_PURCHASED',
+          5:  'SUBSCRIPTION_ON_HOLD',
+          6:  'SUBSCRIPTION_IN_GRACE_PERIOD',
+          7:  'SUBSCRIPTION_RESTARTED',
+          8:  'SUBSCRIPTION_PRICE_CHANGE_CONFIRMED',
+          9:  'SUBSCRIPTION_DEFERRED',
+          10: 'SUBSCRIPTION_PAUSED',
+          11: 'SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED',
+          12: 'SUBSCRIPTION_REVOKED',
+          13: 'SUBSCRIPTION_EXPIRED',
+        };
+
+        const notificationTypeName = typeMap[notificationType] || `UNKNOWN_${notificationType}`;
+
+        this.logger.log(
+          `📨 RTDN type=${notificationTypeName} (${notificationType}), subscriptionId=${subscriptionId}, token_prefix=${purchaseToken?.substring(0, 20)}`,
+        );
+
+        await this.subscriptionsService.handleGooglePlayRTDN(
+          packageName,
+          purchaseToken,
+          notificationTypeName,
+        );
+      }
+
+      return { success: true };
     } catch (error) {
-      this.logger.error(`Webhook error: ${error.message}`);
-      throw new BadRequestException(error.message);
+      this.logger.error(`❌ RTDN webhook error: ${error.message}`);
+      // Always return 200 - returning 4xx/5xx causes Pub/Sub to retry endlessly
+      return { success: false, error: error.message };
     }
-  }
-
-  private async handleSubscriptionCancelled(userId: string): Promise<void> {
-    const subscription = await this.subscriptionsService.getUserSubscription(userId);
-    if (!subscription) return;
-
-    subscription.status = SubscriptionStatus.CANCELLED;
-    subscription.cancelledAt = new Date();
-    subscription.cancelledReason = 'User cancelled in Google Play';
-    subscription.isAutoRenewal = false;
-
-    await this.subscriptionsService.updateSubscription(subscription);
-    this.logger.log(`📱 Subscription cancelled for user ${userId} via Google Play`);
-  }
-
-  private async handleSubscriptionRecovered(userId: string): Promise<void> {
-    const subscription = await this.subscriptionsService.getUserSubscription(userId);
-    if (!subscription) return;
-
-    if (subscription.status === SubscriptionStatus.CANCELLED) {
-      subscription.status = SubscriptionStatus.ACTIVE;
-      subscription.cancelledAt = null;
-      subscription.cancelledReason = null;
-      subscription.isAutoRenewal = true;
-
-      await this.subscriptionsService.updateSubscription(subscription);
-      this.logger.log(`✅ Subscription recovered for user ${userId}`);
-    }
-  }
-
-  private async handleSubscriptionExpired(userId: string): Promise<void> {
-    const subscription = await this.subscriptionsService.getUserSubscription(userId);
-    if (!subscription) return;
-
-    subscription.status = SubscriptionStatus.EXPIRED;
-    subscription.expiryDate = new Date();
-
-    await this.subscriptionsService.updateSubscription(subscription);
-    this.logger.log(`⏰ Subscription expired for user ${userId}`);
-  }
-
-  private async handleSubscriptionOnHold(userId: string): Promise<void> {
-    const subscription = await this.subscriptionsService.getUserSubscription(userId);
-    if (!subscription) return;
-
-    subscription.status = SubscriptionStatus.SUSPENDED;
-    subscription.suspendedAt = new Date();
-    subscription.suspendedReason = 'On hold in Google Play (payment retry)';
-
-    await this.subscriptionsService.updateSubscription(subscription);
-    this.logger.log(`⏸️ Subscription on hold for user ${userId}`);
-  }
-
-  private async handleSubscriptionGracePeriod(userId: string): Promise<void> {
-    this.logger.log(`⏳ Subscription in grace period for user ${userId}`);
   }
 
   @Post('pause')
