@@ -138,12 +138,24 @@ export class SubscriptionsService {
   // ============ USER SUBSCRIPTION MANAGEMENT ============
 
   /**
-   * Get user's current subscription
+   * Get user's current subscription.
+   * Prefers ACTIVE rows; falls back to the most-recently-updated row so
+   * callers always see the most relevant record even if status is expired.
    */
   async getUserSubscription(userId: string): Promise<UserSubscription | null> {
+    // Try active first
+    const active = await this.userSubscriptionsRepository.findOne({
+      where: { userId, status: SubscriptionStatus.ACTIVE },
+      relations: ['plan'],
+    });
+    if (active) return active;
+
+    // Fallback: return whatever row exists (expired, cancelled, etc.)
+    // so callers can still display "your subscription ended" info.
     return this.userSubscriptionsRepository.findOne({
       where: { userId },
       relations: ['plan'],
+      order: { updatedAt: 'DESC' },
     });
   }
 
@@ -559,6 +571,7 @@ export class SubscriptionsService {
 
     if (subscription && subscription.isActive()) {
       user.subscriptionStatus = 'active';
+      user.currentPlanId = subscription.planId;
       user.subscriptionExpiryDate = subscription.expiryDate;
       user.daysRemaining = subscription.getDaysRemaining();
       user.maxConcurrentDevices = subscription.plan.maxDevices;
@@ -567,6 +580,7 @@ export class SubscriptionsService {
         : null;
     } else {
       user.subscriptionStatus = 'free';
+      user.currentPlanId = null;
       user.subscriptionExpiryDate = null;
       user.daysRemaining = 0;
       user.maxConcurrentDevices = 1;
@@ -931,14 +945,31 @@ export class SubscriptionsService {
         `📅 Subscription expiry for user ${userId}: ${expiryDate.toISOString()} (Google expiryTime was: ${verification.expiryTime ?? 'null'})`,
       );
 
-      // Step 9: Create or update user subscription
+      // Step 9: Create or update user subscription.
+      // We look for ANY existing row for this user (active, trial, expired, etc.)
+      // so we can upgrade/replace it in-place rather than create a duplicate.
       let subscription = await this.userSubscriptionsRepository.findOne({
         where: { userId },
         relations: ['plan'],
       });
 
       if (subscription) {
-        // Update existing subscription
+        const wasTrialActive = subscription.isTrialActive;
+        const previousPlanId = subscription.planId;
+
+        if (wasTrialActive) {
+          this.logger.log(
+            `🔄 Superseding active trial (plan=${previousPlanId}) with paid purchase (plan=${planId}) for user ${userId}`,
+          );
+        } else if (previousPlanId !== planId) {
+          this.logger.log(
+            `🔄 Upgrading subscription from plan=${previousPlanId} to plan=${planId} for user ${userId}`,
+          );
+        }
+
+        // Overwrite all fields with the new paid subscription details.
+        // Preserve trialRedeemed=true if the user had already used a trial —
+        // resetting it to false would allow them to re-redeem a trial after buying.
         subscription.planId = planId;
         subscription.status = SubscriptionStatus.ACTIVE;
         subscription.startDate = now;
@@ -946,7 +977,9 @@ export class SubscriptionsService {
         subscription.isAutoRenewal = true;
         subscription.isTrialActive = false;
         subscription.trialEndDate = null;
-        subscription.trialRedeemed = false;
+        // Keep trialRedeemed=true if already set so the user cannot re-use a trial
+        // after having paid. Only reset to false when no trial was ever used.
+        subscription.trialRedeemed = subscription.trialRedeemed || wasTrialActive;
         subscription.cancelledAt = null;
         subscription.cancelledReason = null;
         subscription.suspendedAt = null;
@@ -954,7 +987,7 @@ export class SubscriptionsService {
         subscription.pausedAt = null;
         subscription.pausedReason = null;
       } else {
-        // Create new subscription
+        // No existing row — create a fresh paid subscription.
         subscription = this.userSubscriptionsRepository.create({
           userId,
           planId,

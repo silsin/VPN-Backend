@@ -104,7 +104,6 @@ export class SubscriptionsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user subscription' })
-  @ApiOperation({ summary: 'Get current user subscription' })
   async getMySubscription(@Request() req) {
     const userId = req.user?.id;
     const subscription = await this.subscriptionsService.getUserSubscription(userId);
@@ -117,9 +116,35 @@ export class SubscriptionsController {
       };
     }
 
+    const isActive = subscription.isActive();
+
     return {
-      subscription,
-      isActive: subscription.isActive(),
+      subscription: {
+        id: subscription.id,
+        planId: subscription.planId,
+        planName: subscription.plan?.name ?? null,
+        status: subscription.status,
+        isActive,
+        isTrialActive: subscription.isTrialActive,
+        trialEndDate: subscription.trialEndDate ?? null,
+        startDate: subscription.startDate,
+        expiryDate: subscription.expiryDate,
+        daysRemaining: subscription.getDaysRemaining(),
+        isAutoRenewal: subscription.isAutoRenewal,
+        plan: subscription.plan
+          ? {
+              id: subscription.plan.id,
+              name: subscription.plan.name,
+              description: subscription.plan.description,
+              price: parseFloat(subscription.plan.price.toString()),
+              durationDays: subscription.plan.durationDays,
+              dataLimitGb: subscription.plan.dataLimitGb,
+              maxDevices: subscription.plan.maxDevices,
+              features: subscription.plan.features,
+            }
+          : null,
+      },
+      isActive,
       daysRemaining: subscription.getDaysRemaining(),
     };
   }

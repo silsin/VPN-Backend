@@ -7,6 +7,7 @@ import { NotificationService } from './notification.service';
 import { FcmService } from './fcm.service';
 import { AuditLogService } from './audit-log.service';
 import { AuditLogAction } from '../entities/audit-log.entity';
+import { UsersService } from '../../users/users.service';
 
 export interface TrialEligibilityResult {
   eligible: boolean;
@@ -34,6 +35,7 @@ export class TrialService {
     private notificationService: NotificationService,
     private fcmService: FcmService,
     private auditLogService: AuditLogService,
+    private usersService: UsersService,
   ) {}
 
   /**
@@ -203,12 +205,55 @@ export class TrialService {
       `Trial redeemed for user ${userId}: ${plan.name} - ${plan.trialDays} days (expires ${trialEndDate})`,
     );
 
+    // Sync denormalised cache columns on the users row so the profile
+    // endpoint and any reads of users.subscriptionStatus reflect the
+    // newly active trial immediately.
+    await this.syncUserSubscriptionCache(userId, subscription);
+
     return {
       success: true,
       subscription,
       trialEndDate,
       message: `Free trial started! Your ${plan.name} trial expires on ${trialEndDate.toLocaleDateString()}`,
     };
+  }
+
+  /**
+   * Keep the denormalised cache columns on the users table in sync.
+   * Mirrors the logic in SubscriptionsService.updateUserSubscriptionCache
+   * without creating a circular dependency.
+   */
+  private async syncUserSubscriptionCache(
+    userId: string,
+    subscription: UserSubscription,
+  ): Promise<void> {
+    try {
+      const user = await this.usersService.findOne(userId);
+      if (!user) return;
+
+      if (subscription && subscription.isActive()) {
+        user.subscriptionStatus = 'active';
+        user.currentPlanId = subscription.planId;
+        user.subscriptionExpiryDate = subscription.expiryDate;
+        user.daysRemaining = subscription.getDaysRemaining();
+        user.maxConcurrentDevices = subscription.plan?.maxDevices ?? 1;
+        user.maxDataPerMonth = subscription.plan?.dataLimitGb
+          ? subscription.plan.dataLimitGb * 1024 * 1024 * 1024
+          : null;
+      } else {
+        user.subscriptionStatus = 'free';
+        user.currentPlanId = null;
+        user.subscriptionExpiryDate = null;
+        user.daysRemaining = 0;
+        user.maxConcurrentDevices = 1;
+        user.maxDataPerMonth = 500 * 1024 * 1024 * 1024;
+      }
+
+      user.lastSubscriptionCheckAt = new Date();
+      await this.usersService.update(user.id, user);
+    } catch (err) {
+      this.logger.error(`Failed to sync user subscription cache for ${userId}: ${err.message}`);
+    }
   }
 
   /**
