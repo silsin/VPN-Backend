@@ -247,7 +247,9 @@ export class SubscriptionsService {
     const now = new Date();
     const expiryDate = new Date(now.getTime() + newPlan.durationDays * 24 * 60 * 60 * 1000);
 
-    // Update subscription
+    // Update subscription — clear the in-memory relation object so TypeORM
+    // uses planId (not the stale plan object) to write the FK.
+    currentSub.plan = null;
     currentSub.planId = newPlanId;
     currentSub.expiryDate = expiryDate;
     currentSub.startDate = now;
@@ -289,7 +291,9 @@ export class SubscriptionsService {
     const oldPlanId = currentSub.planId;
     const now = new Date();
 
-    // Downgrade takes effect immediately
+    // Downgrade takes effect immediately — clear the in-memory relation object
+    // so TypeORM uses planId (not the stale plan object) to write the FK.
+    currentSub.plan = null;
     currentSub.planId = newPlanId;
 
     const updated = await this.userSubscriptionsRepository.save(currentSub);
@@ -970,6 +974,12 @@ export class SubscriptionsService {
         // Overwrite all fields with the new paid subscription details.
         // Preserve trialRedeemed=true if the user had already used a trial —
         // resetting it to false would allow them to re-redeem a trial after buying.
+        //
+        // IMPORTANT: clear subscription.plan (the eager-loaded relation object) so
+        // TypeORM does not overwrite planId back to the old plan when save() resolves
+        // the FK from the in-memory relation. Setting planId alone is not enough when
+        // the relation object is still present.
+        subscription.plan = null;
         subscription.planId = planId;
         subscription.status = SubscriptionStatus.ACTIVE;
         subscription.startDate = now;
