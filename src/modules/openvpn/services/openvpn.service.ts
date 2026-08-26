@@ -37,13 +37,25 @@ export class OpenVpnService {
   ) {}
 
   /**
-   * Generate OpenVPN config for user - requires active subscription
+   * Generate OpenVPN config for user - requires non-expired subscription
    */
   async generateOpenVpnConfig(serverId: string, userId: string): Promise<OpenVpnResponse> {
-    // 1. Verify user has active subscription
-    const isActive = await this.subscriptionsService.isSubscriptionActive(userId);
-    if (!isActive) {
-      throw new BadRequestException('Active subscription required for OpenVPN access');
+    // 1. Verify user has non-expired subscription (active, cancelled but not expired, or trial)
+    const subscription = await this.subscriptionsService.getUserSubscription(userId);
+    
+    if (!subscription) {
+      throw new BadRequestException('Subscription required for OpenVPN access');
+    }
+
+    // Check if subscription is expired
+    if (subscription.expiryDate && new Date(subscription.expiryDate) < new Date()) {
+      throw new BadRequestException('Subscription expired. Please renew to access OpenVPN');
+    }
+
+    // Allow: active, cancelled (but not expired), trial
+    const allowedStatuses = ['active', 'cancelled', 'trial'];
+    if (!allowedStatuses.includes(subscription.status)) {
+      throw new BadRequestException('Invalid subscription status for OpenVPN access');
     }
 
     // 2. Find the server
