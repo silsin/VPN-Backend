@@ -28,6 +28,7 @@ import { UsersService } from '../users/users.service';
 import { AdsService } from '../ads/ads.service';
 import { AdFailureReport } from '../ads/entities/ad-failure-report.entity';
 import { SubscriptionTelegramHandlerService } from '../subscriptions/telegram/subscription-telegram-handler.service';
+import { OpenVpnTelegramService } from '../openvpn/telegram/openvpn-telegram.service';
 
 interface TelegramUser {
   id: number;
@@ -40,6 +41,13 @@ interface TelegramMessage {
   chat: { id: number; type: string };
   from?: TelegramUser;
   text?: string;
+  document?: {
+    file_id: string;
+    file_unique_id: string;
+    file_size: number;
+    mime_type: string;
+    file_name?: string;
+  };
 }
 
 interface TelegramCallbackQuery {
@@ -138,6 +146,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     private readonly adsService: AdsService,
     @Optional() private readonly subscriptionHandler?: SubscriptionTelegramHandlerService,
     @Optional() private readonly subscriptionsService?: SubscriptionsService,
+    @Optional() private readonly openVpnTelegramService?: OpenVpnTelegramService,
   ) {
     this.token = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN', '');
     this.enabled =
@@ -240,6 +249,25 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Handle file upload for OpenVPN
+    if (message.document && message.document.file_name?.endsWith('.ovpn')) {
+      if (this.openVpnTelegramService) {
+        try {
+          const fileContent = await this.getFileContent(message.document.file_id);
+          const msg = await this.openVpnTelegramService.startServerAddFromOvpn(message.chat.id, fileContent);
+          if (msg) {
+            await this.send(chatId, msg);
+          }
+        } catch (error) {
+          this.logger.error(`Error downloading .ovpn file: ${error.message}`);
+          await this.send(chatId, `❌ Error reading file: ${error.message}`);
+        }
+      } else {
+        await this.send(chatId, '❌ OpenVPN service is not available.');
+      }
+      return;
+    }
+
     if (this.pendingDialogAdds.has(message.chat.id) && !text.startsWith('/')) {
       await this.continueDialogAdd(message.chat.id, text);
       return;
@@ -257,6 +285,14 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
 
     if (this.pendingAdds.has(message.chat.id) && !text.startsWith('/')) {
       await this.completeAdd(message.chat.id, text);
+      return;
+    }
+
+    if (this.openVpnTelegramService && this.openVpnTelegramService.getPending(message.chat.id) && !text.startsWith('/')) {
+      const response = await this.openVpnTelegramService.continueServerAdd(message.chat.id, text);
+      if (response) {
+        await this.send(chatId, response);
+      }
       return;
     }
 
@@ -333,6 +369,30 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         break;
       case '/subscriptions':
         await this.sendSubscriptionMenu(chatId);
+        break;
+      case '/openvpn':
+        if (this.openVpnTelegramService) {
+          const list = await this.openVpnTelegramService.listServers(1);
+          await this.send(chatId, list.text, list.keyboard);
+        } else {
+          await this.send(chatId, '❌ OpenVPN service is not available.');
+        }
+        break;
+      case '/ovpnadd':
+        if (this.openVpnTelegramService) {
+          const msg = await this.openVpnTelegramService.startServerAdd(message.chat.id);
+          await this.send(chatId, msg);
+        } else {
+          await this.send(chatId, '❌ OpenVPN service is not available.');
+        }
+        break;
+      case '/ovpnstats':
+        if (this.openVpnTelegramService) {
+          const stats = await this.openVpnTelegramService.showStats();
+          await this.send(chatId, stats);
+        } else {
+          await this.send(chatId, '❌ OpenVPN service is not available.');
+        }
         break;
       default:
         await this.send(chatId, 'Unknown command. Send /help to see available commands.');
@@ -430,6 +490,46 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
             messageId,
           );
           break;
+        case 'openvpn':
+          // OpenVPN list pagination
+          if (this.openVpnTelegramService) {
+            await this.answerCallback(query.id);
+            const list = await this.openVpnTelegramService.listServers(parseInt(payload, 10) || 1);
+            await this.editMessage(chatId, messageId, list.text, list.keyboard);
+          }
+          break;
+        case 'ovpn':
+          // OpenVPN actions (details, deactivate, activate, delete)
+          if (this.openVpnTelegramService) {
+            await this.answerCallback(query.id);
+            const [serverId, action] = payload.split('|');
+            switch (action) {
+              case 'details':
+                const details = await this.openVpnTelegramService.showServerDetails(serverId);
+                await this.send(chatId, details);
+                break;
+              case 'deactivate':
+                const deactMsg = await this.openVpnTelegramService.deactivateServer(serverId);
+                await this.send(chatId, deactMsg);
+                break;
+              case 'activate':
+                const actMsg = await this.openVpnTelegramService.activateServer(serverId);
+                await this.send(chatId, actMsg);
+                break;
+              case 'delete':
+                const delMsg = await this.openVpnTelegramService.deleteServer(serverId);
+                await this.send(chatId, delMsg);
+                break;
+            }
+          }
+          break;
+        case 'ovpnadd':
+          if (payload === 'start' && this.openVpnTelegramService) {
+            await this.answerCallback(query.id);
+            const msg = await this.openVpnTelegramService.startServerAdd(Number(chatId));
+            await this.send(chatId, msg);
+          }
+          break;
         default:
           await this.answerCallback(query.id, 'Unknown action');
       }
@@ -443,6 +543,9 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     this.pendingBulk.delete(chatId);
     this.pendingDialogAdds.delete(chatId);
     this.pendingPlanCreates.delete(chatId);
+    if (this.openVpnTelegramService) {
+      this.openVpnTelegramService.clearPending(chatId);
+    }
   }
 
   private isAuthorized(userId: string): boolean {
@@ -479,6 +582,12 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
         '<b>Ads reports</b>',
         '/adsreports [page] — recent ad-not-showing reports',
         '/adssummary [days] — failure counts by reason (default 7)',
+        '',
+        '<b>OpenVPN Servers</b>',
+        '/openvpn — list all OpenVPN servers',
+        '/ovpnadd — add new OpenVPN server manually',
+        '📎 Upload .ovpn file — auto-extract and add server',
+        '/ovpnstats — OpenVPN server statistics',
         '',
         '<b>Subscriptions</b>',
         '/subscriptions — subscription admin keyboard menu',
@@ -2322,7 +2431,35 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     }).then(() => undefined);
   }
 
-  private apiCall<T = unknown>(
+  private async getFileContent(fileId: string): Promise<string> {
+    // 1. Get file path
+    const fileInfo = await this.apiCall<any>('getFile', { file_id: fileId });
+    
+    if (!fileInfo.result || !fileInfo.result.file_path) {
+      throw new Error('Could not get file path from Telegram');
+    }
+
+    // 2. Download file
+    const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileInfo.result.file_path}`;
+    
+    return new Promise((resolve, reject) => {
+      https.get(fileUrl, (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            resolve(data);
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`));
+          }
+        });
+      }).on('error', reject);
+    });
+  }
+
+  private async apiCall<T = unknown>(
     method: string,
     body?: Record<string, unknown>,
   ): Promise<T> {

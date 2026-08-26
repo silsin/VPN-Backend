@@ -7,6 +7,7 @@ import { DeviceLoginsModule } from '../device-logins/device-logins.module';
 import { UsersModule } from '../users/users.module';
 import { AdsModule } from '../ads/ads.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { OpenVpnModule } from '../openvpn/openvpn.module';
 import { ConfigCheckerService } from './config-checker.service';
 import { ConfigCheckerController } from './config-checker.controller';
 import { TelegramReportService } from './telegram-report.service';
@@ -23,6 +24,7 @@ import { XrayInstallerService } from './xray-installer.service';
     UsersModule,
     AdsModule,
     SubscriptionsModule,
+    OpenVpnModule,
   ],
   providers: [
     ConfigCheckerService,

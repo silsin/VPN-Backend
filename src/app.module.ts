@@ -19,6 +19,7 @@ import { HandshakeModule } from './modules/handshake/handshake.module';
 import { DatabaseMigrationModule } from './modules/database-migration/database-migration.module';
 import { ConfigCheckerModule } from './modules/config-checker/config-checker.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { OpenVpnModule } from './modules/openvpn/openvpn.module';
 import { WafMiddleware } from './common/middleware/waf.middleware';
 
 @Module({
@@ -55,6 +56,7 @@ import { WafMiddleware } from './common/middleware/waf.middleware';
     DatabaseMigrationModule,
     ConfigCheckerModule,
     SubscriptionsModule,
+    OpenVpnModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,0 +1,21 @@
+CREATE TABLE openvpn_servers (
+  id VARCHAR(36) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  server_ip VARCHAR(255) NOT NULL,
+  port INT DEFAULT 1194,
+  protocol ENUM('udp', 'tcp') DEFAULT 'udp',
+  ca_bundle LONGTEXT NOT NULL,
+  client_cert LONGTEXT NOT NULL,
+  client_key LONGTEXT NOT NULL,
+  shared_username VARCHAR(255) NOT NULL,
+  shared_password VARCHAR(255) NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  country VARCHAR(100),
+  city VARCHAR(100),
+  speed INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_server_ip (server_ip, port),
+  INDEX idx_active (is_active),
+  INDEX idx_country (country)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
