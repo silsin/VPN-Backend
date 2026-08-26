@@ -49,7 +49,8 @@ export class OpenVpnTelegramService {
       // Auto-generate name from IP
       const name = `Server-${parsed.serverIp.split('.')[3]}`;
 
-      const serverData: OpenVpnServerDto = {
+      const serverData: any = {
+        id: uuidv4(),
         name,
         serverIp: parsed.serverIp,
         port: parsed.port,
