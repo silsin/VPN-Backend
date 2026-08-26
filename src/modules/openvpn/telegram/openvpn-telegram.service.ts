@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenVpnService, OpenVpnServerDto } from '../services/openvpn.service';
 import { OpenVpnServer, OpenVpnAuthType } from '../entities/openvpn-server.entity';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface PendingOpenVpnAdd {
   step: 'name' | 'serverIp' | 'port' | 'protocol' | 'country' | 'city' | 'speed' | 'confirm';
