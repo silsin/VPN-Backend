@@ -2432,15 +2432,16 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getFileContent(fileId: string): Promise<string> {
-    // 1. Get file path
+    // 1. Get file path - apiCall returns result directly
     const fileInfo = await this.apiCall<any>('getFile', { file_id: fileId });
     
-    if (!fileInfo || !fileInfo.result || !fileInfo.result.file_path) {
+    if (!fileInfo || !fileInfo.file_path) {
+      this.logger.error(`getFile response: ${JSON.stringify(fileInfo)}`);
       throw new Error('Could not get file path from Telegram');
     }
 
     // 2. Download file
-    const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileInfo.result.file_path}`;
+    const fileUrl = `https://api.telegram.org/file/bot${this.token}/${fileInfo.file_path}`;
     
     return new Promise((resolve, reject) => {
       https.get(fileUrl, (res) => {
