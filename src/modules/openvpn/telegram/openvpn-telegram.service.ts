@@ -39,46 +39,36 @@ export class OpenVpnTelegramService {
 
   /**
    * Start adding OpenVPN server from .ovpn file content
+   * Auto-save with defaults, no confirmation needed
    */
   async startServerAddFromOvpn(chatId: number, ovpnContent: string): Promise<string | null> {
-    this.pendingOpenvpnAdds.delete(chatId);
-    
     try {
       const parsed = this.parseOvpnFile(ovpnContent);
       
-      const pending: PendingOpenVpnAdd = {
-        step: 'name',
+      // Auto-generate name from IP
+      const name = `Server-${parsed.serverIp.split('.')[3]}`;
+
+      const serverData: OpenVpnServerDto = {
+        name,
         serverIp: parsed.serverIp,
         port: parsed.port,
         protocol: parsed.protocol,
+        country: 'Unknown',
+        city: 'Unknown',
+        speed: 1000,
         caBundle: parsed.caBundle,
         clientCert: parsed.clientCert,
         clientKey: parsed.clientKey,
         tlsCrypt: parsed.tlsCrypt,
         authType: parsed.authType,
-        username: parsed.username || 'vpnuser',
-        password: parsed.password || 'vpnpass123',
+        sharedUsername: parsed.username || 'vpnuser',
+        sharedPassword: parsed.password || 'vpnpass123',
       };
 
-      this.pendingOpenvpnAdds.set(chatId, pending);
+      // Create immediately
+      const server = await this.openVpnService.createServer(serverData);
 
-      // Show detected config and ask for name
-      let summary = [
-        '✅ <b>.ovpn file parsed successfully!</b>',
-        '',
-        `IP: <b>${parsed.serverIp}</b>`,
-        `Port: <b>${parsed.port}</b>`,
-        `Protocol: <b>${parsed.protocol}</b>`,
-        `Auth Type: <b>${parsed.authType}</b>`,
-      ].join('\n');
-
-      if (parsed.caBundle) summary += '\n✓ CA Certificate found';
-      if (parsed.clientCert) summary += '\n✓ Client Certificate found';
-      if (parsed.clientKey) summary += '\n✓ Client Key found';
-      if (parsed.tlsCrypt) summary += '\n✓ TLS-Crypt found';
-
-      summary += '\n\n📝 Enter server name (e.g., Germany #1):';
-      return summary;
+      return `✅ <b>Server Created!</b>\n\n<b>${name}</b>\nIP: ${parsed.serverIp}:${parsed.port}\nID: <code>${server.id}</code>\n\nYou can edit details later via /openvpn menu.`;
     } catch (error) {
       this.logger.error(`Error parsing .ovpn file: ${error.message}`);
       return `❌ Error parsing file: ${error.message}`;
