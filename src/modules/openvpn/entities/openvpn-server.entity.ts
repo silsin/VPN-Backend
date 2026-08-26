@@ -22,16 +22,16 @@ export class OpenVpnServer {
   @Column({ default: 'udp', enum: ['udp', 'tcp'] })
   protocol: 'udp' | 'tcp';
 
-  @Column({ type: 'longtext', nullable: true })
+  @Column({ type: 'text', nullable: true })
   caBundle: string;
 
-  @Column({ type: 'longtext', nullable: true })
+  @Column({ type: 'text', nullable: true })
   clientCert: string;
 
-  @Column({ type: 'longtext', nullable: true })
+  @Column({ type: 'text', nullable: true })
   clientKey: string;
 
-  @Column({ type: 'longtext', nullable: true })
+  @Column({ type: 'text', nullable: true })
   tlsCrypt: string;
 
   @Column({ default: 'user-pass', enum: ['certificate', 'user-pass'] })
