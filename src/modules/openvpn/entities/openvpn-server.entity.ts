@@ -13,7 +13,7 @@ export class OpenVpnServer {
   @Column()
   name: string;
 
-  @Column()
+  @Column({ name: 'server_ip' })
   serverIp: string;
 
   @Column({ default: 1194 })
@@ -22,28 +22,28 @@ export class OpenVpnServer {
   @Column({ default: 'udp', enum: ['udp', 'tcp'] })
   protocol: 'udp' | 'tcp';
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'ca_bundle', type: 'text', nullable: true })
   caBundle: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'client_cert', type: 'text', nullable: true })
   clientCert: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'client_key', type: 'text', nullable: true })
   clientKey: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'tls_crypt', type: 'text', nullable: true })
   tlsCrypt: string;
 
-  @Column({ default: 'user-pass', enum: ['certificate', 'user-pass'] })
+  @Column({ name: 'auth_type', default: 'user-pass', enum: ['certificate', 'user-pass'] })
   authType: OpenVpnAuthType;
 
-  @Column()
+  @Column({ name: 'shared_username' })
   sharedUsername: string;
 
-  @Column()
+  @Column({ name: 'shared_password' })
   sharedPassword: string;
 
-  @Column({ default: true })
+  @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
   @Column({ nullable: true })
@@ -55,9 +55,9 @@ export class OpenVpnServer {
   @Column({ default: 0 })
   speed: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }
