@@ -2435,7 +2435,7 @@ export class TelegramAdminBotService implements OnModuleInit, OnModuleDestroy {
     // 1. Get file path
     const fileInfo = await this.apiCall<any>('getFile', { file_id: fileId });
     
-    if (!fileInfo.result || !fileInfo.result.file_path) {
+    if (!fileInfo || !fileInfo.result || !fileInfo.result.file_path) {
       throw new Error('Could not get file path from Telegram');
     }
 
