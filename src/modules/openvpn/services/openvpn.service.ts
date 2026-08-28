@@ -222,26 +222,15 @@ resolv-retry infinite
 nobind
 persist-key
 persist-tun
+remote-cert-tls server
 `;
 
     // Add auth method
     if (authType === 'user-pass') {
       config += `auth-user-pass
 `;
-      if (tlsCrypt) {
-        config += `<tls-crypt>
-${tlsCrypt}
-</tls-crypt>
-`;
-      }
     } else {
-      // Certificate-based auth
-      if (caBundle) {
-        config += `<ca>
-${caBundle}
-</ca>
-`;
-      }
+      // Certificate-based auth: embed the client cert + key
       if (clientCert) {
         config += `<cert>
 ${clientCert}
@@ -254,6 +243,26 @@ ${clientKey}
 </key>
 `;
       }
+    }
+
+    // The CA certificate is ALWAYS required so the client can verify the
+    // server, regardless of auth type. (Previously it was only added for
+    // certificate-based auth, so user-pass configs shipped without a <ca>
+    // block and the client stalled at "Building configuration" then timed out.)
+    if (caBundle) {
+      config += `<ca>
+${caBundle}
+</ca>
+`;
+    }
+
+    // tls-crypt encrypts/authenticates the control channel; applies to both
+    // auth types when a static key is configured.
+    if (tlsCrypt) {
+      config += `<tls-crypt>
+${tlsCrypt}
+</tls-crypt>
+`;
     }
 
     config += `cipher AES-256-CBC
